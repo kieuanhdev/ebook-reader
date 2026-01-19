@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:my_ebook_reader/core/html_helper.dart';
+import 'package:my_ebook_reader/injection.dart';
 import 'package:my_ebook_reader/presentation/screens/reader_drawer.dart';
 import 'package:my_ebook_reader/presentation/screens/reader_settings_dialog.dart';
 import 'package:webview_windows/webview_windows.dart';
@@ -16,9 +17,10 @@ class EbookReaderScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     // Inject Bloc vào cây Widget
     return BlocProvider(
-      create: (context) =>
-          ReaderBloc(repository: EbookRepositoryImpl())
-            ..add(ReaderInitEvent()), // Gọi Init ngay khi tạo
+      // create: (context) =>
+      //     ReaderBloc(repository: EbookRepositoryImpl())
+      //       ..add(ReaderInitEvent()), // Gọi Init ngay khi tạo
+      create: (context) => getIt<ReaderBloc>()..add(ReaderInitEvent()),
       child: const _EbookReaderView(),
     );
   }

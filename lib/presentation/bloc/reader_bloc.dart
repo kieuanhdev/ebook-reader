@@ -2,10 +2,12 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
 import '../../domain/entities/chapter.dart';
 import '../../domain/repositories/ebook_repository.dart';
+import 'package:injectable/injectable.dart'; // Import
 
 part 'reader_event.dart';
 part 'reader_state.dart';
 
+@injectable
 class ReaderBloc extends Bloc<ReaderEvent, ReaderState> {
   final EbookRepository _repository;
 

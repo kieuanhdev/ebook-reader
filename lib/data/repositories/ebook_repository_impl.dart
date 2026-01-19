@@ -6,6 +6,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../domain/entities/chapter.dart';
 import '../../domain/repositories/ebook_repository.dart';
 
+import 'package:injectable/injectable.dart'; // Import thư viện này
+
+@LazySingleton(as: EbookRepository)
 class EbookRepositoryImpl implements EbookRepository {
   // Hàm phụ trợ: Chuyển đổi từ EpubChapter (của thư viện) -> Chapter (của Domain)
   // và làm phẳng danh sách lồng nhau.
