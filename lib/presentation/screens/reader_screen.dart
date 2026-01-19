@@ -120,6 +120,80 @@ class _EbookReaderScreenState extends State<EbookReaderScreen> {
     }
   }
 
+  // --- UI MỤC LỤC ---
+  Widget? _buildDrawer() {
+    // Nếu chưa có sách thì không hiện mục lục
+    if (_chapters.isEmpty) return null;
+
+    return Drawer(
+      child: Column(
+        children: [
+          // Phần tiêu đề đầu mục lục
+          Container(
+            padding: const EdgeInsets.only(top: 40, bottom: 20, left: 20),
+            width: double.infinity,
+            color: Colors.blue,
+            child: const Text(
+              "Mục lục",
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+
+          // Danh sách cuộn
+          Expanded(
+            child: ListView.builder(
+              itemCount: _chapters.length,
+              itemBuilder: (context, index) {
+                // Kiểm tra xem đây có phải chương đang đọc không
+                bool isActive = index == _currentIndex;
+
+                return ListTile(
+                  title: Text(
+                    _chapters[index].title,
+                    style: TextStyle(
+                      color: isActive
+                          ? Colors.blue
+                          : Colors.black, // Tô màu xanh nếu đang đọc
+                      fontWeight: isActive
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                    ),
+                  ),
+                  selected: isActive,
+                  selectedTileColor: Colors.blue.withOpacity(0.1), // Tô nền nhẹ
+                  leading: Icon(
+                    Icons.article,
+                    color: isActive ? Colors.blue : Colors.grey,
+                  ),
+                  onTap: () {
+                    // 1. Cập nhật chương mới
+                    setState(() => _currentIndex = index);
+                    _displayCurrentChapter();
+
+                    // 2. Lưu lại ngay
+                    if (_currentFilePath != null) {
+                      _repository.saveProgress(
+                        _currentFilePath!,
+                        _currentIndex,
+                      );
+                    }
+
+                    // 3. Đóng Menu lại
+                    Navigator.pop(context);
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -133,6 +207,9 @@ class _EbookReaderScreenState extends State<EbookReaderScreen> {
           ),
         ],
       ),
+
+      drawer: _buildDrawer(),
+
       body: Column(
         children: [
           Expanded(
