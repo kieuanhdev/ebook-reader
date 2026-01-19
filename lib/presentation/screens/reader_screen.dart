@@ -26,6 +26,9 @@ class _EbookReaderScreenState extends State<EbookReaderScreen> {
   int _currentIndex = 0;
   String? _currentFilePath;
 
+  double _fontSize = 16.0;
+  bool _isDarkMode = false;
+
   @override
   void initState() {
     super.initState();
@@ -35,13 +38,22 @@ class _EbookReaderScreenState extends State<EbookReaderScreen> {
   Future<void> initWebview() async {
     try {
       await _controller.initialize();
-      await _controller.setBackgroundColor(Colors.white);
+      // await _controller.setBackgroundColor(Colors.white);
 
       if (!mounted) return;
       setState(() => _isWebviewReady = true);
 
       // Đợi Webview ổn định
       await Future.delayed(const Duration(milliseconds: 500));
+
+      // 1. LOAD SETTINGS TRƯỚC
+      var (size, isDark) = await _repository.loadSettings();
+      setState(() {
+        _fontSize = size;
+        _isDarkMode = isDark;
+      });
+      // Cập nhật màu nền Webview ngay lập tức cho đỡ nháy
+      await _updateWebviewBackground();
 
       // Gọi lớp Data để lấy lịch sử
       var history = await _repository.loadLastBook();
@@ -55,6 +67,17 @@ class _EbookReaderScreenState extends State<EbookReaderScreen> {
       }
     } catch (e) {
       print("Lỗi init: $e");
+    }
+  }
+
+  // Hàm phụ để set màu nền cho khung Webview (tránh viền trắng khi ở Dark mode)
+  Future<void> _updateWebviewBackground() async {
+    if (_isDarkMode) {
+      await _controller.setBackgroundColor(
+        const Color(0xFF121212),
+      ); // Màu đen xám
+    } else {
+      await _controller.setBackgroundColor(Colors.white);
     }
   }
 
@@ -86,16 +109,33 @@ class _EbookReaderScreenState extends State<EbookReaderScreen> {
     if (_chapters.isEmpty) return;
     var chapter = _chapters[_currentIndex];
 
+    // --- CSS ĐỘNG DỰA TRÊN SETTINGS ---
+    String cssColor = _isDarkMode ? "#dddddd" : "#000000"; // Màu chữ
+    String cssBg = _isDarkMode ? "#121212" : "#ffffff"; // Màu nền
+
     // CSS làm đẹp
     String html =
         """
       <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: 0 auto; }
+        body { 
+          font-family: Arial, sans-serif; 
+          line-height: 1.6; 
+          padding: 20px; 
+          max-width: 800px; 
+          margin: 0 auto;
+          
+          /* Áp dụng biến settings */
+          font-size: ${_fontSize}px;
+          color: $cssColor;
+          background-color: $cssBg;
+        }
         img { max-width: 100%; height: auto; }
       </style>
       ${chapter.htmlContent}
     """;
     _controller.loadStringContent(html);
+
+    _updateWebviewBackground();
   }
 
   void _showWelcome() {
@@ -194,12 +234,70 @@ class _EbookReaderScreenState extends State<EbookReaderScreen> {
     );
   }
 
+  void _showSettingsDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        // Dùng StatefulBuilder để cập nhật UI trong Dialog
+        return StatefulBuilder(
+          builder: (context, setStateDialog) {
+            return AlertDialog(
+              title: const Text("Tùy chỉnh giao diện"),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 1. Chuyển đổi Dark Mode
+                  SwitchListTile(
+                    title: const Text("Chế độ tối (Dark Mode)"),
+                    value: _isDarkMode,
+                    onChanged: (val) {
+                      setStateDialog(() => _isDarkMode = val); // Update switch
+                      setState(() {}); // Update màn hình chính
+                      _displayCurrentChapter(); // Reload lại webview với CSS mới
+                      _repository.saveSettings(_fontSize, _isDarkMode); // Lưu
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  // 2. Slider chỉnh cỡ chữ
+                  Text("Cỡ chữ: ${_fontSize.toInt()}"),
+                  Slider(
+                    min: 12,
+                    max: 30,
+                    divisions: 9,
+                    value: _fontSize,
+                    onChanged: (val) {
+                      setStateDialog(() => _fontSize = val);
+                      setState(() {});
+                      _displayCurrentChapter();
+                      _repository.saveSettings(_fontSize, _isDarkMode);
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("Đóng"),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(_bookTitle),
         actions: [
+          IconButton(
+            onPressed: _showSettingsDialog, // Gọi hàm mở dialog
+            icon: const Icon(Icons.settings),
+            tooltip: "Cài đặt",
+          ),
           IconButton(
             onPressed: _onPickFile,
             icon: const Icon(Icons.folder_open),

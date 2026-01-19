@@ -9,4 +9,10 @@ abstract class EbookRepository {
 
   // Lưu lại tiến độ
   Future<void> saveProgress(String filePath, int currentChapterIndex);
+
+  // Trả về (Cỡ chữ, Chế độ tối hay không)
+  Future<(double, bool)> loadSettings();
+
+  // Lưu cài đặt
+  Future<void> saveSettings(double fontSize, bool isDarkMode);
 }

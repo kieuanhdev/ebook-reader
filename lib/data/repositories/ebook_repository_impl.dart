@@ -83,4 +83,21 @@ class EbookRepositoryImpl implements EbookRepository {
     await prefs.setString('last_book_path', filePath);
     await prefs.setInt('last_chapter_index', currentChapterIndex);
   }
+
+  // --- THỰC THI LOGIC SETTINGS ---
+  @override
+  Future<(double, bool)> loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    // Mặc định là cỡ chữ 16, chế độ Sáng (false)
+    double fontSize = prefs.getDouble('settings_font_size') ?? 16.0;
+    bool isDarkMode = prefs.getBool('settings_dark_mode') ?? false;
+    return (fontSize, isDarkMode);
+  }
+
+  @override
+  Future<void> saveSettings(double fontSize, bool isDarkMode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('settings_font_size', fontSize);
+    await prefs.setBool('settings_dark_mode', isDarkMode);
+  }
 }
