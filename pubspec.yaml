@@ -50,6 +50,8 @@ dev_dependencies:
   file_picker: ^10.3.8
   epubx: ^4.0.0
 
+  shared_preferences: ^2.5.4
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 

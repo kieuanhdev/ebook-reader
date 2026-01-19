@@ -1,9 +1,15 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+// ignore: depend_on_referenced_packages
 import 'package:webview_windows/webview_windows.dart';
+// ignore: depend_on_referenced_packages
 import 'package:window_manager/window_manager.dart';
+// ignore: depend_on_referenced_packages
 import 'package:file_picker/file_picker.dart'; // Thư viện chọn file
+// ignore: depend_on_referenced_packages
 import 'package:epubx/epubx.dart' as epub; // Thư viện đọc EPUB
+// ignore: depend_on_referenced_packages
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,6 +46,8 @@ class _EbookReaderScreenState extends State<EbookReaderScreen> {
   int _currentIndex = 0; //Đang đọc chương số mấy
   bool _hasBook = false; // đã chọn sách chưa
 
+  String? _currentFilePath;
+
   @override
   void initState() {
     super.initState();
@@ -53,19 +61,16 @@ class _EbookReaderScreenState extends State<EbookReaderScreen> {
 
       await _controller.setBackgroundColor(Colors.white);
 
-      // Lúc đầu chưa có sách, ta hiện một trang trắng hoặc hướng dẫn
-      await _controller.loadStringContent("""
-        <div style= "text-align: center; padding-top: 50px; font-family: sans-serif;">
-          <h1>Chào mừng! </h1>
-          <p>Bấm vào icon thư mực góc trên để mở sách. </p>
-        </div>
-      """);
-
       if (!mounted) return;
       setState(() {
         _isWebviewReady = true;
       });
+
+      await Future.delayed(Duration(milliseconds: 500));
+
+      await _loadLastBook();
     } catch (e) {
+      // ignore: avoid_print
       print("Lỗi khởi tạo Webview: $e");
     }
   }
@@ -75,19 +80,15 @@ class _EbookReaderScreenState extends State<EbookReaderScreen> {
     List<epub.EpubChapter> flatList = [];
     for (var chapter in chapters) {
       flatList.add(chapter);
-      flatList.addAll(_flattenChapters(chapter.SubChapters!));
+      if (chapter.SubChapters != null && chapter.SubChapters!.isNotEmpty) {
+        flatList.addAll(_flattenChapters(chapter.SubChapters!));
+      }
     }
     return flatList;
   }
 
-  Future<void> _pickAndOpenEpub() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['epub'],
-    );
-
-    if (result != null) {
-      File file = File(result.files.single.path!);
+  Future<void> _openEpubFromFile(File file, {int targetIndex = 0}) async {
+    try {
       List<int> bytes = await file.readAsBytes();
       epub.EpubBook book = await epub.EpubReader.readBook(bytes);
 
@@ -99,11 +100,31 @@ class _EbookReaderScreenState extends State<EbookReaderScreen> {
       setState(() {
         _bookTitle = book.Title ?? "Không có tiêu đề";
         _allChapters = flatChapters;
-        _currentIndex = 0;
+        if (targetIndex >= 0 && targetIndex < flatChapters.length) {
+          _currentIndex = targetIndex;
+        } else {
+          _currentIndex = 0;
+        }
         _hasBook = true;
+        _currentFilePath = file.path; // Lưu lại đường dẫn file hiện tại
       });
 
       _loadCurrentChapter();
+      _saveProgress(); // Lưu lại ngay khi vừa mở
+    } catch (e) {
+      print("Lỗi mở file: $e");
+    }
+  }
+
+  Future<void> _pickAndOpenEpub() async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['epub'],
+    );
+
+    if (result != null) {
+      File file = File(result.files.single.path!);
+      await _openEpubFromFile(file);
     }
   }
 
@@ -132,6 +153,7 @@ class _EbookReaderScreenState extends State<EbookReaderScreen> {
         _currentIndex++;
       });
       _loadCurrentChapter();
+      _saveProgress();
     }
   }
 
@@ -141,6 +163,45 @@ class _EbookReaderScreenState extends State<EbookReaderScreen> {
         _currentIndex--;
       });
       _loadCurrentChapter();
+      _saveProgress();
+    }
+  }
+
+  // TÍNH NĂNG LƯU TRỮ
+
+  // Func sẽ được gọi mỗi khí mở sách hoặc chuyển trương
+  Future<void> _saveProgress() async {
+    if (!_hasBook) return;
+
+    final prefs = await SharedPreferences.getInstance();
+
+    if (_currentFilePath != null) {
+      await prefs.setString('last_book_path', _currentFilePath!);
+      await prefs.setInt('last_chapter_index', _currentIndex);
+    }
+    // ignore: avoid_print
+    print("Đã lưu: Chương $_currentIndex");
+  }
+
+  // Func này được gọi ở initState để tự động mở lại sách cũ
+  Future<void> _loadLastBook() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? lastPath = prefs.getString("last_book_path");
+    int? lastIndex = prefs.getInt('last_chapter_index');
+
+    if (lastPath != null) {
+      File file = File(lastPath);
+      if (await file.exists()) {
+        print("Phát hiện lịch sử đọc: $lastPath");
+        await _openEpubFromFile(File(lastPath), targetIndex: lastIndex ?? 0);
+      }
+    } else {
+      await _controller.loadStringContent("""
+        <div style="text-align: center; padding-top: 50px; font-family: sans-serif;">
+          <h1>Chào mừng trở lại!</h1>
+          <p>Chọn sách để bắt đầu đọc.</p>
+        </div>
+    """);
     }
   }
 
