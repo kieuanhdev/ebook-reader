@@ -1,0 +1,173 @@
+import 'package:flutter/material.dart';
+import 'package:webview_windows/webview_windows.dart';
+
+// Import các file Clean Architecture
+import '../../domain/entities/chapter.dart';
+import '../../domain/repositories/ebook_repository.dart';
+import '../../data/repositories/ebook_repository_impl.dart';
+
+class EbookReaderScreen extends StatefulWidget {
+  const EbookReaderScreen({super.key});
+
+  @override
+  State<EbookReaderScreen> createState() => _EbookReaderScreenState();
+}
+
+class _EbookReaderScreenState extends State<EbookReaderScreen> {
+  final _controller = WebviewController();
+
+  // Khởi tạo Repository (Lớp Data)
+  final EbookRepository _repository = EbookRepositoryImpl();
+
+  bool _isWebviewReady = false;
+  String _bookTitle = "Sách chưa mở";
+
+  List<Chapter> _chapters = [];
+  int _currentIndex = 0;
+  String? _currentFilePath;
+
+  @override
+  void initState() {
+    super.initState();
+    initWebview();
+  }
+
+  Future<void> initWebview() async {
+    try {
+      await _controller.initialize();
+      await _controller.setBackgroundColor(Colors.white);
+
+      if (!mounted) return;
+      setState(() => _isWebviewReady = true);
+
+      // Đợi Webview ổn định
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      // Gọi lớp Data để lấy lịch sử
+      var history = await _repository.loadLastBook();
+
+      if (history != null) {
+        // Tách dữ liệu trả về (Dart 3 Pattern Matching)
+        var (chapters, path, index) = history;
+        _loadBookToUI(chapters, path, index);
+      } else {
+        _showWelcome();
+      }
+    } catch (e) {
+      print("Lỗi init: $e");
+    }
+  }
+
+  // Hàm cập nhật giao diện khi có dữ liệu sách
+  void _loadBookToUI(List<Chapter> chapters, String path, int index) {
+    setState(() {
+      _chapters = chapters;
+      _currentFilePath = path;
+      // Kiểm tra index hợp lệ
+      _currentIndex = (index >= 0 && index < chapters.length) ? index : 0;
+      _bookTitle = "Đang đọc sách";
+    });
+    _displayCurrentChapter();
+  }
+
+  // Sự kiện bấm nút mở file
+  Future<void> _onPickFile() async {
+    try {
+      var (chapters, path) = await _repository.pickAndParseBook();
+      _loadBookToUI(chapters, path, 0); // Mở sách mới thì về chương 0
+      _repository.saveProgress(path, 0); // Lưu lại ngay
+    } catch (e) {
+      print("Lỗi hoặc hủy chọn file: $e");
+    }
+  }
+
+  // Hiển thị nội dung HTML lên Webview
+  void _displayCurrentChapter() {
+    if (_chapters.isEmpty) return;
+    var chapter = _chapters[_currentIndex];
+
+    // CSS làm đẹp
+    String html =
+        """
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; padding: 20px; max-width: 800px; margin: 0 auto; }
+        img { max-width: 100%; height: auto; }
+      </style>
+      ${chapter.htmlContent}
+    """;
+    _controller.loadStringContent(html);
+  }
+
+  void _showWelcome() {
+    _controller.loadStringContent("""
+      <div style="text-align: center; padding-top: 50px; font-family: sans-serif;">
+        <h1>Chào mừng!</h1>
+        <p>Bấm vào icon thư mục để mở sách EPUB.</p>
+      </div>
+    """);
+  }
+
+  void _changeChapter(int step) {
+    int newIndex = _currentIndex + step;
+    if (newIndex >= 0 && newIndex < _chapters.length) {
+      setState(() => _currentIndex = newIndex);
+      _displayCurrentChapter();
+
+      // Gọi repository để lưu tiến độ
+      if (_currentFilePath != null) {
+        _repository.saveProgress(_currentFilePath!, _currentIndex);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(_bookTitle),
+        actions: [
+          IconButton(
+            onPressed: _onPickFile,
+            icon: const Icon(Icons.folder_open),
+            tooltip: "Mở file",
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: _isWebviewReady
+                ? Webview(_controller)
+                : const Center(child: CircularProgressIndicator()),
+          ),
+          // Chỉ hiện thanh điều hướng khi đã có sách
+          if (_chapters.isNotEmpty)
+            Container(
+              color: Colors.grey[200],
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: _currentIndex > 0
+                        ? () => _changeChapter(-1)
+                        : null,
+                    icon: const Icon(Icons.arrow_back),
+                    label: const Text("Trước"),
+                  ),
+                  Text("Chương ${_currentIndex + 1} / ${_chapters.length}"),
+                  ElevatedButton.icon(
+                    onPressed: _currentIndex < _chapters.length - 1
+                        ? () => _changeChapter(1)
+                        : null,
+                    icon: const Icon(Icons.arrow_forward),
+                    label: const Text("Sau"),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
