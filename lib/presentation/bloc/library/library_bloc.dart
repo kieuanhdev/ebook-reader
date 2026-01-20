@@ -41,12 +41,23 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
 
     // Xử lý khi thêm sách mới
     on<AddBookEvent>((event, emit) async {
-      emit(LibraryLoading()); // Hiện loading
-      await _repository.addBook(
-        event.filePath,
-      ); // Lưu vào DB (Lúc này file .db mới được tạo!)
-      final books = await _repository.getBooks(); // Load lại danh sách mới
-      emit(LibraryLoaded(books));
+      emit(LibraryLoading()); // Bắt đầu xoay
+
+      try {
+        await _repository.addBook(event.filePath);
+        // Nếu thành công thì load lại danh sách
+        final books = await _repository.getBooks();
+        emit(LibraryLoaded(books));
+      } catch (e) {
+        print("Bloc bắt được lỗi: $e");
+
+        // QUAN TRỌNG: Nếu lỗi, phải load lại danh sách cũ để tắt vòng xoay
+        // Nếu không có dòng này, màn hình sẽ trắng xóa và xoay mãi
+        final books = await _repository.getBooks();
+        emit(LibraryLoaded(books));
+
+        // (Nâng cao: Bạn có thể emit state LibraryError để hiện thông báo đỏ)
+      }
     });
   }
 }

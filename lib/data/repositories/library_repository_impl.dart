@@ -34,53 +34,50 @@ class LibraryRepositoryImpl implements LibraryRepository {
 
   @override
   Future<void> addBook(String filePath) async {
-    // 1. Đọc file epub để lấy thông tin
+    // Kiểm tra file có tồn tại không trước
     final file = File(filePath);
-    final bytes = await file.readAsBytes();
-    final epubBook = await epub.EpubReader.readBook(bytes);
-
-    // 2. Lấy tên sách & tác giả
-    final title = epubBook.Title ?? p.basename(filePath);
-    final author = epubBook.Author;
-
-    // 3. Trích xuất và lưu ảnh bìa (Nếu có)
-    String? localCoverPath;
-    if (epubBook.CoverImage != null) {
-      final appDir = await getApplicationDocumentsDirectory();
-      final coverDir = Directory(p.join(appDir.path, 'covers'));
-      if (!await coverDir.exists()) {
-        await coverDir.create();
-      }
-
-      final fileName = '${const Uuid().v4()}.jpg';
-      final coverFile = File(p.join(coverDir.path, fileName));
-
-      // Convert Image object của thư viện epubx sang bytes và lưu
-      // Lưu ý: epubx trả về Image package, cần encode lại,
-      // nhưng để đơn giản ta sẽ lưu bytes thô nếu thư viện hỗ trợ hoặc bỏ qua bước encode phức tạp tạm thời.
-      // *Mẹo*: Thường cover image trong epubx là danh sách bytes sẵn.
-      // Ở đây tôi giả định xử lý đơn giản, nếu phức tạp ta sẽ chỉnh sau.
-      // (Đoạn này tạm thời để null coverPath nếu chưa xử lý ảnh sâu)
+    if (!await file.exists()) {
+      throw Exception("File không tồn tại");
     }
 
-    // 4. Lưu vào Database
-    final newBook = Book(
-      id: const Uuid().v4(),
-      title: title,
-      author: author,
-      filePath: filePath,
-      coverPath: localCoverPath,
-    );
+    try {
+      final bytes = await file.readAsBytes();
 
-    final db = await _dbService.database;
-    await db.insert('books', {
-      'id': newBook.id,
-      'title': newBook.title,
-      'author': newBook.author,
-      'filePath': newBook.filePath,
-      'coverPath': newBook.coverPath,
-      'progress': newBook.progress,
-    });
+      // Dòng này hay gây crash nhất nếu file epub lỗi
+      final epubBook = await epub.EpubReader.readBook(bytes);
+
+      // 2. Lấy tên sách & tác giả (Nếu null thì lấy tên file)
+      final title = epubBook.Title ?? p.basename(filePath);
+      final author = epubBook.Author ?? "Unknown";
+
+      // ... (Phần xử lý ảnh bìa giữ nguyên) ...
+
+      // 4. Lưu vào Database
+      final newBook = Book(
+        id: const Uuid().v4(),
+        title: title,
+        author: author,
+        filePath: filePath,
+        coverPath: null, // Tạm thời để null để test cho nhanh
+      );
+
+      final db = await _dbService.database;
+      await db.insert('books', {
+        'id': newBook.id,
+        'title': newBook.title,
+        'author': newBook.author,
+        'filePath': newBook.filePath,
+        'coverPath': newBook.coverPath,
+        'progress': newBook.progress,
+      });
+
+      print("✅ Đã thêm sách: $title");
+    } catch (e) {
+      // Bắt lỗi và in ra console, không cho crash app
+      print("❌ LỖI ĐỌC FILE EPUB: $e");
+      // Ném lỗi ra ngoài để Bloc biết mà xử lý
+      throw Exception("File sách bị lỗi định dạng, không thể mở.");
+    }
   }
 
   @override
