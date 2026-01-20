@@ -62,7 +62,21 @@ class _EbookReaderViewState extends State<_EbookReaderView> {
       }
       // ---------------------------
     } catch (e) {
-      print("Lỗi khởi tạo Webview: $e");
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text("Lỗi Webview"),
+            content: Text(e.toString()), // Hiện nguyên văn lỗi
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("OK"),
+              ),
+            ],
+          ),
+        );
+      }
     }
   }
 
