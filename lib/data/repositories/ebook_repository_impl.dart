@@ -157,34 +157,30 @@ class EbookRepositoryImpl implements EbookRepository {
     final bytes = await file.readAsBytes();
 
     try {
-      // 2. Đọc bytes và Parse Epub
-      final epubBook = await epub.EpubReader.readBook(bytes);
-
-      // 3. Lấy tên sách (Nếu null thì lấy tên file)
-      final title = epubBook.Title ?? p.basename(filePath);
-
-      // 4. Chuyển đổi Chapter
-      List<Chapter> domainChapters = [];
-      if (epubBook.Chapters != null) {
-        domainChapters = _flattenChapters(epubBook.Chapters!);
-      }
-      if (domainChapters.isEmpty && epubBook.Content?.Html != null) {
-        domainChapters = _buildChaptersFromHtmlContent(
-          epubBook.Content!.Html!,
-        );
-      }
-
-      if (domainChapters.isEmpty) {
-        // Fallback nếu không có TOC/chapters
-        return await _safeParseBookWithoutNavigation(bytes, filePath);
-      }
-
-      return (domainChapters, title);
+      // Ưu tiên dùng parser an toàn (không phụ thuộc Navigation/TOC)
+      return await _safeParseBookWithoutNavigation(bytes, filePath);
     } catch (e) {
-      print("Lỗi parse sách: $e");
       try {
-        return await _safeParseBookWithoutNavigation(bytes, filePath);
+        // Fallback sang parser chuẩn nếu file có TOC hợp lệ
+        final epubBook = await epub.EpubReader.readBook(bytes);
+        final title = epubBook.Title ?? p.basename(filePath);
+
+        List<Chapter> domainChapters = [];
+        if (epubBook.Chapters != null) {
+          domainChapters = _flattenChapters(epubBook.Chapters!);
+        }
+        if (domainChapters.isEmpty && epubBook.Content?.Html != null) {
+          domainChapters = _buildChaptersFromHtmlContent(
+            epubBook.Content!.Html!,
+          );
+        }
+
+        if (domainChapters.isEmpty) {
+          throw Exception("Không tìm thấy nội dung chương trong file EPUB.");
+        }
+        return (domainChapters, title);
       } catch (fallbackError) {
+        print("Lỗi parse sách: $e");
         print("Lỗi parse sách (fallback): $fallbackError");
         throw Exception("Không thể đọc định dạng sách này.");
       }
