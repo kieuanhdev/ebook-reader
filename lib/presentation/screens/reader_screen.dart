@@ -123,6 +123,11 @@ class _EbookReaderViewState extends State<_EbookReaderView> {
 
         return Scaffold(
           appBar: AppBar(
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back),
+              tooltip: "Quay lại thư viện",
+              onPressed: () => Navigator.pop(context),
+            ),
             title: Text(state.bookTitle),
             actions: [
               IconButton(

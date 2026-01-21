@@ -4,6 +4,7 @@ import 'package:injectable/injectable.dart';
 import 'package:my_ebook_reader/data/datasources/local/database_service.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart'; // Cần thêm package uuid nếu chưa có (flutter pub add uuid)
 
 import '../../domain/entities/book.dart';
@@ -142,17 +143,27 @@ class LibraryRepositoryImpl implements LibraryRepository {
     final db = await _dbService.database;
     final rows = await db.query(
       'books',
-      columns: ['coverPath'],
+      columns: ['coverPath', 'filePath'],
       where: 'id = ?',
       whereArgs: [id],
       limit: 1,
     );
     final coverPath =
         rows.isNotEmpty ? rows.first['coverPath'] as String? : null;
+    final filePath =
+        rows.isNotEmpty ? rows.first['filePath'] as String? : null;
     if (coverPath != null && coverPath.isNotEmpty) {
       final coverFile = File(coverPath);
       if (await coverFile.exists()) {
         await coverFile.delete();
+      }
+    }
+    if (filePath != null && filePath.isNotEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('progress_$filePath');
+      final lastPath = prefs.getString('last_book_path');
+      if (lastPath == filePath) {
+        await prefs.remove('last_book_path');
       }
     }
     await db.delete('books', where: 'id = ?', whereArgs: [id]);
