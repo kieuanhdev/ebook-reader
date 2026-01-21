@@ -129,6 +129,7 @@ class ReaderBloc extends Bloc<ReaderEvent, ReaderState> {
       state.copyWith(
         currentIndex: event.index,
         isLoading: true,
+        resetCurrentChapter: true,
       ),
     );
 

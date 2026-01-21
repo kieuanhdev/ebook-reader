@@ -55,7 +55,12 @@ class HtmlHelper {
             padding: ${padding}px;
             box-sizing: border-box;
           }
-          img { max-width: 100%; height: auto; }
+          img {
+            max-width: 100%;
+            height: auto;
+            max-height: 90vh;
+            object-fit: contain;
+          }
         </style>
       </head>
       <body>
@@ -67,8 +72,11 @@ class HtmlHelper {
         <script>
           (function() {
             const pageMode = ${isScroll ? "false" : "true"};
+            const spreadMode = ${isSpread ? "true" : "false"};
             const reader = document.getElementById('reader');
             let currentPage = 1;
+            const imgPlaceholder =
+              'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
             function pageWidth() {
               return window.innerWidth || document.documentElement.clientWidth || 1;
             }
@@ -98,6 +106,7 @@ class HtmlHelper {
               window.scrollTo(left, 0);
               document.documentElement.scrollLeft = left;
               document.body.scrollLeft = left;
+              updateImagesForPage();
               return currentPage;
             }
             function reflow() {
@@ -105,6 +114,44 @@ class HtmlHelper {
               if (currentPage > total) currentPage = total;
               goToPage(currentPage);
               return total;
+            }
+            function optimizeImages() {
+              const imgs = document.images;
+              for (let i = 0; i < imgs.length; i++) {
+                const img = imgs[i];
+                img.loading = 'lazy';
+                img.decoding = 'async';
+                if (!img.dataset.src) {
+                  img.dataset.src = img.getAttribute('src') || '';
+                }
+                if (pageMode) {
+                  img.setAttribute('src', imgPlaceholder);
+                }
+              }
+            }
+            function updateImagesForPage() {
+              if (!pageMode) return;
+              const width = columnStride();
+              const pagesVisible = spreadMode ? 2 : 1;
+              const left = (currentPage - 1) * width;
+              const right = left + (width * pagesVisible);
+              const imgs = document.images;
+              for (let i = 0; i < imgs.length; i++) {
+                const img = imgs[i];
+                const rect = img.getBoundingClientRect();
+                const imgLeft = rect.left + window.scrollX;
+                const imgRight = rect.right + window.scrollX;
+                const visible = imgRight >= left && imgLeft <= right;
+                if (visible) {
+                  if (img.dataset.src && img.getAttribute('src') !== img.dataset.src) {
+                    img.setAttribute('src', img.dataset.src);
+                  }
+                } else {
+                  if (img.getAttribute('src') !== imgPlaceholder) {
+                    img.setAttribute('src', imgPlaceholder);
+                  }
+                }
+              }
             }
             window.readerPaging = {
               getPageCount: pageCount,
@@ -120,6 +167,8 @@ class HtmlHelper {
             if (pageMode) {
               setTimeout(reflow, 30);
             }
+            optimizeImages();
+            updateImagesForPage();
           })();
         </script>
       </body>

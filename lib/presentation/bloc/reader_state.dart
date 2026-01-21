@@ -33,6 +33,7 @@ class ReaderState extends Equatable {
     List<Chapter>? chapters,
     int? currentIndex,
     Chapter? currentChapter,
+    bool resetCurrentChapter = false,
     String? currentFilePath,
     double? fontSize,
     bool? isDarkMode,
@@ -44,7 +45,8 @@ class ReaderState extends Equatable {
       bookTitle: bookTitle ?? this.bookTitle,
       chapters: chapters ?? this.chapters,
       currentIndex: currentIndex ?? this.currentIndex,
-      currentChapter: currentChapter ?? this.currentChapter,
+      currentChapter:
+          resetCurrentChapter ? null : (currentChapter ?? this.currentChapter),
       currentFilePath: currentFilePath ?? this.currentFilePath,
       fontSize: fontSize ?? this.fontSize,
       isDarkMode: isDarkMode ?? this.isDarkMode,
