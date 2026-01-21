@@ -1,9 +1,14 @@
 import 'dart:io';
-import 'package:file_picker/file_picker.dart';
+import 'package:archive/archive.dart';
 import 'package:epubx/epubx.dart' as epub;
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:path/path.dart' as p; // Cần import thư viện này để lấy tên file
+import 'package:epubx/src/readers/content_reader.dart';
+import 'package:epubx/src/readers/package_reader.dart';
+import 'package:epubx/src/readers/root_file_path_reader.dart';
+import 'package:epubx/src/utils/zip_path_utils.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:injectable/injectable.dart';
+import 'package:path/path.dart' as p; // Cần import thư viện này để lấy tên file
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../domain/entities/chapter.dart';
 import '../../domain/repositories/ebook_repository.dart';
@@ -34,6 +39,92 @@ class EbookRepositoryImpl implements EbookRepository {
     return flatList;
   }
 
+  List<Chapter> _buildChaptersFromSpine(
+    epub.EpubBookRef bookRef,
+    epub.EpubContent content,
+  ) {
+    final spineItems = bookRef.Schema?.Package?.Spine?.Items ?? const [];
+    final manifestItems =
+        bookRef.Schema?.Package?.Manifest?.Items ?? const [];
+    final manifestById = {
+      for (final item in manifestItems) item.Id: item,
+    };
+
+    final chapters = <Chapter>[];
+    for (final spineItem in spineItems) {
+      final href = manifestById[spineItem.IdRef]?.Href;
+      if (href == null) continue;
+      final html = content.Html?[href]?.Content;
+      if (html == null || html.trim().isEmpty) continue;
+      chapters.add(
+        Chapter(
+          title: p.basenameWithoutExtension(href),
+          htmlContent: html,
+        ),
+      );
+    }
+
+    return chapters;
+  }
+
+  List<Chapter> _buildChaptersFromHtmlContent(
+    Map<String, epub.EpubTextContentFile> htmlMap,
+  ) {
+    final chapters = <Chapter>[];
+    for (final entry in htmlMap.entries) {
+      final html = entry.value.Content;
+      if (html == null || html.trim().isEmpty) continue;
+      chapters.add(
+        Chapter(
+          title: p.basenameWithoutExtension(entry.key),
+          htmlContent: html,
+        ),
+      );
+    }
+    return chapters;
+  }
+
+  Future<(List<Chapter>, String)> _safeParseBookWithoutNavigation(
+    List<int> bytes,
+    String filePath,
+  ) async {
+    final archive = ZipDecoder().decodeBytes(bytes);
+    final rootFilePath = await RootFilePathReader.getRootFilePath(archive);
+    if (rootFilePath == null || rootFilePath.isEmpty) {
+      throw Exception("Không tìm thấy đường dẫn OPF trong EPUB.");
+    }
+
+    final contentDir = ZipPathUtils.getDirectoryPath(rootFilePath);
+    final package = await PackageReader.readPackage(archive, rootFilePath);
+
+    final schema = epub.EpubSchema()
+      ..Package = package
+      ..ContentDirectoryPath = contentDir;
+
+    final creators = package.Metadata?.Creators ?? <epub.EpubMetadataCreator>[];
+    final bookRef = epub.EpubBookRef(archive)
+      ..Schema = schema
+      ..Title =
+          package.Metadata?.Titles?.isNotEmpty == true
+              ? package.Metadata!.Titles!.first
+              : p.basename(filePath)
+      ..AuthorList = creators.map((creator) => creator.Creator).toList()
+      ..Author = creators.map((creator) => creator.Creator).join(', ');
+
+    bookRef.Content = ContentReader.parseContentMap(bookRef);
+    final content = await epub.EpubReader.readContent(bookRef.Content!);
+
+    var chapters = _buildChaptersFromSpine(bookRef, content);
+    if (chapters.isEmpty && content.Html != null) {
+      chapters = _buildChaptersFromHtmlContent(content.Html!);
+    }
+    if (chapters.isEmpty) {
+      throw Exception("Không tìm thấy nội dung chương trong file EPUB.");
+    }
+
+    return (chapters, bookRef.Title ?? p.basename(filePath));
+  }
+
   @override
   Future<void> saveProgress(String filePath, int currentChapterIndex) async {
     final prefs = await SharedPreferences.getInstance();
@@ -56,9 +147,10 @@ class EbookRepositoryImpl implements EbookRepository {
       throw Exception("File sách không tồn tại ở đường dẫn này: $filePath");
     }
 
+    final bytes = await file.readAsBytes();
+
     try {
       // 2. Đọc bytes và Parse Epub
-      final bytes = await file.readAsBytes();
       final epubBook = await epub.EpubReader.readBook(bytes);
 
       // 3. Lấy tên sách (Nếu null thì lấy tên file)
@@ -69,11 +161,26 @@ class EbookRepositoryImpl implements EbookRepository {
       if (epubBook.Chapters != null) {
         domainChapters = _flattenChapters(epubBook.Chapters!);
       }
+      if (domainChapters.isEmpty && epubBook.Content?.Html != null) {
+        domainChapters = _buildChaptersFromHtmlContent(
+          epubBook.Content!.Html!,
+        );
+      }
+
+      if (domainChapters.isEmpty) {
+        // Fallback nếu không có TOC/chapters
+        return await _safeParseBookWithoutNavigation(bytes, filePath);
+      }
 
       return (domainChapters, title);
     } catch (e) {
       print("Lỗi parse sách: $e");
-      throw Exception("Không thể đọc định dạng sách này.");
+      try {
+        return await _safeParseBookWithoutNavigation(bytes, filePath);
+      } catch (fallbackError) {
+        print("Lỗi parse sách (fallback): $fallbackError");
+        throw Exception("Không thể đọc định dạng sách này.");
+      }
     }
   }
 

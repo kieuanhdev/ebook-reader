@@ -39,6 +39,7 @@ dependencies:
   window_manager: ^0.5.1
   file_picker: ^10.3.8
   epubx: ^4.0.0
+  archive: ^3.6.1
 
   flutter_bloc: ^9.1.1
   equatable: ^2.0.8
