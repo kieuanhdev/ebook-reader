@@ -38,6 +38,10 @@ class _EbookReaderView extends StatefulWidget {
 class _EbookReaderViewState extends State<_EbookReaderView> {
   final _webviewController = WebviewController();
   bool _isWebviewInitialized = false;
+  int _currentPage = 1;
+  int _totalPages = 1;
+  bool _pendingPaginationUpdate = false;
+  bool _pendingGoToLastPage = false;
 
   @override
   void initState() {
@@ -51,8 +55,10 @@ class _EbookReaderViewState extends State<_EbookReaderView> {
 
       // Quan trọng: Phải lắng nghe URL loading error nếu có
       _webviewController.loadingState.listen((event) {
-        if (event == LoadingState.navigationCompleted) {
-          // Webview load xong
+        if (event == LoadingState.navigationCompleted &&
+            _pendingPaginationUpdate) {
+          _pendingPaginationUpdate = false;
+          _refreshPagination();
         }
       });
 
@@ -96,21 +102,94 @@ class _EbookReaderViewState extends State<_EbookReaderView> {
     );
 
     // 2. Tạo HTML và load
-    // Kiểm tra danh sách chương có trống không để tránh lỗi IndexOutOfBound
     String html = "";
-    if (state.chapters.isNotEmpty &&
-        state.currentIndex < state.chapters.length) {
+    if (state.currentChapter != null && state.currentChapter!.hasContent) {
       html = HtmlHelper.generateChapterHtml(
-        chapter: state.chapters[state.currentIndex],
+        chapter: state.currentChapter!,
         fontSize: state.fontSize,
         isDarkMode: state.isDarkMode,
         layoutMode: readerLayoutToString(state.layout),
       );
+    } else if (state.isLoading) {
+      html = HtmlHelper.generateLoadingHtml();
     } else {
-      html = HtmlHelper.generateWelcomeHtml(); // Hoặc HTML báo lỗi/loading
+      html = HtmlHelper.generateWelcomeHtml();
+    }
+
+    if (state.layout != ReaderLayout.scroll) {
+      _currentPage = 1;
+      _totalPages = 1;
+      _pendingPaginationUpdate = true;
     }
 
     _webviewController.loadStringContent(html);
+  }
+
+  Future<void> _refreshPagination() async {
+    if (!mounted) return;
+    final total = await _callPageScript(
+      'window.readerPaging?.getPageCount?.() ?? 1',
+      fallback: 1,
+    );
+    final current = await _callPageScript(
+      'window.readerPaging?.getCurrentPage?.() ?? 1',
+      fallback: 1,
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _totalPages = total;
+      _currentPage = current;
+    });
+
+    if (_pendingGoToLastPage) {
+      _pendingGoToLastPage = false;
+      await _goToPage(_totalPages);
+    }
+  }
+
+  Future<int> _callPageScript(String script, {int fallback = 1}) async {
+    try {
+      final raw = await _webviewController.executeScript(script);
+      if (raw == null) return fallback;
+      final match = RegExp(r'-?\d+(\.\d+)?').firstMatch(raw.toString());
+      final parsed = match != null ? double.tryParse(match.group(0)!) : null;
+      return parsed?.round() ?? fallback;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  Future<void> _goToPage(int page) async {
+    final updated = await _callPageScript(
+      'window.readerPaging?.goToPage?.($page) ?? $page',
+      fallback: page,
+    );
+    if (!mounted) return;
+    setState(() => _currentPage = updated);
+  }
+
+  Future<void> _nextPageOrChapter(ReaderBloc bloc, ReaderState state) async {
+    if (state.layout == ReaderLayout.scroll) return;
+    if (_currentPage < _totalPages) {
+      await _goToPage(_currentPage + 1);
+      return;
+    }
+    if (state.currentIndex < state.chapters.length - 1) {
+      bloc.add(const ReaderChangeChapterEvent(1));
+    }
+  }
+
+  Future<void> _prevPageOrChapter(ReaderBloc bloc, ReaderState state) async {
+    if (state.layout == ReaderLayout.scroll) return;
+    if (_currentPage > 1) {
+      await _goToPage(_currentPage - 1);
+      return;
+    }
+    if (state.currentIndex > 0) {
+      _pendingGoToLastPage = true;
+      bloc.add(const ReaderChangeChapterEvent(-1));
+    }
   }
 
   @override
@@ -181,35 +260,67 @@ class _EbookReaderViewState extends State<_EbookReaderView> {
                     horizontal: 20,
                     vertical: 10,
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      ElevatedButton.icon(
-                        onPressed: state.currentIndex > 0
-                            ? () => bloc.add(const ReaderChangeChapterEvent(-1))
-                            : null,
-                        icon: const Icon(Icons.arrow_back),
-                        label: const Text("Trước"),
-                      ),
-
-                      // Hiển thị số trang linh hoạt hơn
-                      Text(
-                        "${state.currentIndex + 1} / ${state.chapters.length}",
-                        style: TextStyle(
-                          color: state.isDarkMode ? Colors.white : Colors.black,
+                  child: state.layout == ReaderLayout.scroll
+                      ? Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            ElevatedButton.icon(
+                              onPressed: state.currentIndex > 0
+                                  ? () => bloc.add(
+                                      const ReaderChangeChapterEvent(-1),
+                                    )
+                                  : null,
+                              icon: const Icon(Icons.arrow_back),
+                              label: const Text("Trước"),
+                            ),
+                            Text(
+                              "${state.currentIndex + 1} / ${state.chapters.length}",
+                              style: TextStyle(
+                                color:
+                                    state.isDarkMode ? Colors.white : Colors.black,
+                              ),
+                            ),
+                            ElevatedButton.icon(
+                              onPressed:
+                                  state.currentIndex < state.chapters.length - 1
+                                      ? () => bloc.add(
+                                          const ReaderChangeChapterEvent(1),
+                                        )
+                                      : null,
+                              icon: const Icon(Icons.arrow_forward),
+                              label: const Text("Sau"),
+                            ),
+                          ],
+                        )
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            ElevatedButton.icon(
+                              onPressed:
+                                  _currentPage > 1 || state.currentIndex > 0
+                                      ? () => _prevPageOrChapter(bloc, state)
+                                      : null,
+                              icon: const Icon(Icons.arrow_back),
+                              label: const Text("Trước"),
+                            ),
+                            Text(
+                              "Trang $_currentPage / $_totalPages",
+                              style: TextStyle(
+                                color:
+                                    state.isDarkMode ? Colors.white : Colors.black,
+                              ),
+                            ),
+                            ElevatedButton.icon(
+                              onPressed: _currentPage < _totalPages ||
+                                      state.currentIndex <
+                                          state.chapters.length - 1
+                                  ? () => _nextPageOrChapter(bloc, state)
+                                  : null,
+                              icon: const Icon(Icons.arrow_forward),
+                              label: const Text("Sau"),
+                            ),
+                          ],
                         ),
-                      ),
-
-                      ElevatedButton.icon(
-                        onPressed:
-                            state.currentIndex < state.chapters.length - 1
-                            ? () => bloc.add(const ReaderChangeChapterEvent(1))
-                            : null,
-                        icon: const Icon(Icons.arrow_forward),
-                        label: const Text("Sau"),
-                      ),
-                    ],
-                  ),
                 ),
             ],
           ),

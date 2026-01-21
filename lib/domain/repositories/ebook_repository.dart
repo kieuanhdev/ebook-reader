@@ -8,6 +8,9 @@ abstract class EbookRepository {
   // 2. Chức năng đọc file từ đường dẫn (Dùng cho Tủ Sách)
   Future<(List<Chapter>, String)> parseBook(String filePath);
 
+  // 2.1. Load nội dung của 1 chương theo nhu cầu
+  Future<String> loadChapterHtml(String filePath, Chapter chapter);
+
   // 3. Load lại cuốn sách đọc dở lần trước (History)
   Future<(List<Chapter>, String, int)?> loadLastBook();
 

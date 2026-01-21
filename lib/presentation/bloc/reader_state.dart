@@ -7,6 +7,7 @@ class ReaderState extends Equatable {
   final String bookTitle;
   final List<Chapter> chapters; // File cha sẽ lo việc import class Chapter này
   final int currentIndex;
+  final Chapter? currentChapter;
   final String? currentFilePath;
   final double fontSize;
   final bool isDarkMode;
@@ -18,6 +19,7 @@ class ReaderState extends Equatable {
     this.bookTitle = "Sách chưa mở",
     this.chapters = const [],
     this.currentIndex = 0,
+    this.currentChapter,
     this.currentFilePath,
     this.fontSize = 16.0,
     this.isDarkMode = false,
@@ -30,6 +32,7 @@ class ReaderState extends Equatable {
     String? bookTitle,
     List<Chapter>? chapters,
     int? currentIndex,
+    Chapter? currentChapter,
     String? currentFilePath,
     double? fontSize,
     bool? isDarkMode,
@@ -41,6 +44,7 @@ class ReaderState extends Equatable {
       bookTitle: bookTitle ?? this.bookTitle,
       chapters: chapters ?? this.chapters,
       currentIndex: currentIndex ?? this.currentIndex,
+      currentChapter: currentChapter ?? this.currentChapter,
       currentFilePath: currentFilePath ?? this.currentFilePath,
       fontSize: fontSize ?? this.fontSize,
       isDarkMode: isDarkMode ?? this.isDarkMode,
@@ -56,6 +60,7 @@ class ReaderState extends Equatable {
     bookTitle,
     chapters,
     currentIndex,
+    currentChapter,
     currentFilePath,
     fontSize,
     isDarkMode,

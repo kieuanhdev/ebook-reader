@@ -50,12 +50,16 @@ class ReaderBloc extends Bloc<ReaderEvent, ReaderState> {
         // Load tiến độ đọc đã lưu của cuốn sách này (nếu có)
         int savedIndex = await _repository.loadProgress(path);
 
+        final safeIndex = savedIndex.clamp(0, chapters.length - 1);
+        final currentChapter = await _loadChapterContent(path, chapters, safeIndex);
+
         emit(
           state.copyWith(
             isLoading: false,
             chapters: chapters,
             currentFilePath: path,
-            currentIndex: savedIndex,
+            currentIndex: safeIndex,
+            currentChapter: currentChapter,
             bookTitle: title,
             contentUpdateTimestamp: DateTime.now().millisecondsSinceEpoch,
           ),
@@ -70,12 +74,20 @@ class ReaderBloc extends Bloc<ReaderEvent, ReaderState> {
           // Lấy tên file làm tiêu đề tạm thời vì loadLastBook chỉ trả về path
           String titleFromPath = p.basename(path);
 
+          final safeIndex = index.clamp(0, chapters.length - 1);
+          final currentChapter = await _loadChapterContent(
+            path,
+            chapters,
+            safeIndex,
+          );
+
           emit(
             state.copyWith(
               isLoading: false,
               chapters: chapters,
               currentFilePath: path,
-              currentIndex: index,
+              currentIndex: safeIndex,
+              currentChapter: currentChapter,
               bookTitle: titleFromPath, // Hoặc để "Đang đọc tiếp..."
               contentUpdateTimestamp: DateTime.now().millisecondsSinceEpoch,
             ),
@@ -106,22 +118,40 @@ class ReaderBloc extends Bloc<ReaderEvent, ReaderState> {
     ReaderJumpToChapterEvent event,
     Emitter<ReaderState> emit,
   ) async {
+    if (state.currentFilePath == null ||
+        event.index < 0 ||
+        event.index >= state.chapters.length) {
+      return;
+    }
+
     // 1. Cập nhật UI ngay lập tức
     emit(
       state.copyWith(
         currentIndex: event.index,
+        isLoading: true,
+      ),
+    );
+
+    final currentChapter = await _loadChapterContent(
+      state.currentFilePath!,
+      state.chapters,
+      event.index,
+    );
+
+    emit(
+      state.copyWith(
+        isLoading: false,
+        currentChapter: currentChapter,
         contentUpdateTimestamp: DateTime.now().millisecondsSinceEpoch,
       ),
     );
 
     // 2. Lưu tiến độ xuống ổ cứng (chạy ngầm)
-    if (state.currentFilePath != null) {
-      await _repository.saveProgress(
-        state.currentFilePath!,
-        event.index,
-        state.chapters.length,
-      );
-    }
+    await _repository.saveProgress(
+      state.currentFilePath!,
+      event.index,
+      state.chapters.length,
+    );
   }
 
   Future<void> _onSettingsUpdate(
@@ -144,5 +174,22 @@ class ReaderBloc extends Bloc<ReaderEvent, ReaderState> {
         contentUpdateTimestamp: DateTime.now().millisecondsSinceEpoch,
       ),
     );
+  }
+
+  Future<Chapter?> _loadChapterContent(
+    String filePath,
+    List<Chapter> chapters,
+    int index,
+  ) async {
+    if (index < 0 || index >= chapters.length) return null;
+    final chapter = chapters[index];
+    if (chapter.hasContent) return chapter;
+
+    try {
+      final html = await _repository.loadChapterHtml(filePath, chapter);
+      return chapter.copyWith(htmlContent: html);
+    } catch (_) {
+      return chapter;
+    }
   }
 }
