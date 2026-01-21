@@ -2,26 +2,29 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:epubx/epubx.dart' as epub;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path/path.dart' as p; // Cần import thư viện này để lấy tên file
+import 'package:injectable/injectable.dart';
 
 import '../../domain/entities/chapter.dart';
 import '../../domain/repositories/ebook_repository.dart';
 
-import 'package:injectable/injectable.dart'; // Import thư viện này
-
 @LazySingleton(as: EbookRepository)
 class EbookRepositoryImpl implements EbookRepository {
-  // Hàm phụ trợ: Chuyển đổi từ EpubChapter (của thư viện) -> Chapter (của Domain)
-  // và làm phẳng danh sách lồng nhau.
+  // --- HÀM PHỤ TRỢ (PRIVATE) ---
+
+  // 2. Hàm đệ quy chuyển đổi EpubChapter -> Domain Chapter
   List<Chapter> _flattenChapters(List<epub.EpubChapter> sourceChapters) {
     List<Chapter> flatList = [];
     for (var chapter in sourceChapters) {
-      // Mapping dữ liệu
-      flatList.add(
-        Chapter(
-          title: chapter.Title ?? "Chương không tên",
-          htmlContent: chapter.HtmlContent ?? "",
-        ),
-      );
+      // Chỉ lấy chương có nội dung
+      if (chapter.HtmlContent != null && chapter.HtmlContent!.isNotEmpty) {
+        flatList.add(
+          Chapter(
+            title: chapter.Title ?? "Chương không tên",
+            htmlContent: chapter.HtmlContent!, // Raw HTML, sẽ bọc ở HtmlHelper
+          ),
+        );
+      }
 
       // Đệ quy lấy chương con
       if (chapter.SubChapters != null && chapter.SubChapters!.isNotEmpty) {
@@ -31,7 +34,49 @@ class EbookRepositoryImpl implements EbookRepository {
     return flatList;
   }
 
-  // --- 1. CHỌN VÀ ĐỌC SÁCH MỚI ---
+  @override
+  Future<void> saveProgress(String filePath, int currentChapterIndex) async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // 1. Lưu vị trí của sách này
+    await prefs.setInt('progress_$filePath', currentChapterIndex);
+
+    // 2. Lưu luôn đây là cuốn sách cuối cùng (để tính năng History hoạt động)
+    await prefs.setString('last_book_path', filePath);
+  }
+
+  // --- CÁC HÀM CHÍNH (OVERRIDE) ---
+
+  @override
+  Future<(List<Chapter>, String)> parseBook(String filePath) async {
+    final file = File(filePath);
+
+    // 1. Kiểm tra file tồn tại
+    if (!await file.exists()) {
+      throw Exception("File sách không tồn tại ở đường dẫn này: $filePath");
+    }
+
+    try {
+      // 2. Đọc bytes và Parse Epub
+      final bytes = await file.readAsBytes();
+      final epubBook = await epub.EpubReader.readBook(bytes);
+
+      // 3. Lấy tên sách (Nếu null thì lấy tên file)
+      final title = epubBook.Title ?? p.basename(filePath);
+
+      // 4. Chuyển đổi Chapter
+      List<Chapter> domainChapters = [];
+      if (epubBook.Chapters != null) {
+        domainChapters = _flattenChapters(epubBook.Chapters!);
+      }
+
+      return (domainChapters, title);
+    } catch (e) {
+      print("Lỗi parse sách: $e");
+      throw Exception("Không thể đọc định dạng sách này.");
+    }
+  }
+
   @override
   Future<(List<Chapter>, String)> pickAndParseBook() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -42,57 +87,48 @@ class EbookRepositoryImpl implements EbookRepository {
     if (result == null) throw Exception("Người dùng hủy chọn file");
 
     String path = result.files.single.path!;
-    File file = File(path);
 
-    // Đọc byte và parse
-    List<int> bytes = await file.readAsBytes();
-    epub.EpubBook book = await epub.EpubReader.readBook(bytes);
-
-    List<Chapter> chapters = [];
-    if (book.Chapters != null) {
-      chapters = _flattenChapters(book.Chapters!);
-    }
-
-    return (chapters, path);
+    // Tái sử dụng hàm parseBook ở trên để code gọn hơn
+    return await parseBook(path);
   }
 
-  // --- 2. ĐỌC LẠI SÁCH CŨ TỪ LỊCH SỬ ---
+  // --- QUẢN LÝ TIẾN ĐỘ ---
+
+  @override
+  Future<int> loadProgress(String filePath) async {
+    final prefs = await SharedPreferences.getInstance();
+    // Lấy tiến độ riêng của cuốn sách này
+    return prefs.getInt('progress_$filePath') ?? 0;
+  }
+
   @override
   Future<(List<Chapter>, String, int)?> loadLastBook() async {
     final prefs = await SharedPreferences.getInstance();
     String? lastPath = prefs.getString('last_book_path');
-    int? lastIndex = prefs.getInt('last_chapter_index');
 
-    if (lastPath != null && File(lastPath).existsSync()) {
-      // Đọc lại file từ đường dẫn đã lưu
-      File file = File(lastPath);
-      List<int> bytes = await file.readAsBytes();
-      epub.EpubBook book = await epub.EpubReader.readBook(bytes);
+    if (lastPath != null && await File(lastPath).exists()) {
+      try {
+        // Tái sử dụng hàm parseBook
+        var (chapters, _) = await parseBook(lastPath);
 
-      List<Chapter> chapters = [];
-      if (book.Chapters != null) {
-        chapters = _flattenChapters(book.Chapters!);
+        // Lấy lại tiến độ cũ của sách đó
+        int lastIndex = prefs.getInt('progress_$lastPath') ?? 0;
+
+        return (chapters, lastPath, lastIndex);
+      } catch (e) {
+        return null; // File lỗi hoặc không tồn tại nữa
       }
-
-      return (chapters, lastPath, lastIndex ?? 0);
     }
-    return null; // Không tìm thấy lịch sử
+    return null; // Chưa có lịch sử
   }
 
-  // --- 3. LƯU TIẾN ĐỘ ---
-  @override
-  Future<void> saveProgress(String filePath, int currentChapterIndex) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('last_book_path', filePath);
-    await prefs.setInt('last_chapter_index', currentChapterIndex);
-  }
+  // --- CÀI ĐẶT (SETTINGS) ---
 
-  // --- THỰC THI LOGIC SETTINGS ---
   @override
   Future<(double, bool)> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    // Mặc định là cỡ chữ 16, chế độ Sáng (false)
-    double fontSize = prefs.getDouble('settings_font_size') ?? 16.0;
+    double fontSize =
+        prefs.getDouble('settings_font_size') ?? 18.0; // Mặc định 18 cho dễ đọc
     bool isDarkMode = prefs.getBool('settings_dark_mode') ?? false;
     return (fontSize, isDarkMode);
   }

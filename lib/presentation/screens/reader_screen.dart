@@ -1,26 +1,27 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:my_ebook_reader/core/html_helper.dart';
 import 'package:my_ebook_reader/injection.dart';
-import 'package:my_ebook_reader/presentation/screens/reader_drawer.dart';
-import 'package:my_ebook_reader/presentation/screens/reader_settings_dialog.dart';
 import 'package:webview_windows/webview_windows.dart';
 
-import '../../data/repositories/ebook_repository_impl.dart';
-
+import '../../core/html_helper.dart'; // Đảm bảo đường dẫn đúng
 import '../bloc/reader_bloc.dart';
+import 'reader_drawer.dart';
+import 'reader_settings_dialog.dart';
 
 class EbookReaderScreen extends StatelessWidget {
-  const EbookReaderScreen({super.key});
+  // 1. Thêm biến nhận đường dẫn sách
+  final String bookPath;
+
+  const EbookReaderScreen({
+    super.key,
+    required this.bookPath, // Bắt buộc phải truyền vào
+  });
 
   @override
   Widget build(BuildContext context) {
-    // Inject Bloc vào cây Widget
     return BlocProvider(
-      // create: (context) =>
-      //     ReaderBloc(repository: EbookRepositoryImpl())
-      //       ..add(ReaderInitEvent()), // Gọi Init ngay khi tạo
-      create: (context) => getIt<ReaderBloc>()..add(ReaderInitEvent()),
+      // 2. Truyền đường dẫn sách vào Event khởi tạo
+      create: (context) => getIt<ReaderBloc>()..add(ReaderInitEvent(bookPath)),
       child: const _EbookReaderView(),
     );
   }
@@ -47,17 +48,21 @@ class _EbookReaderViewState extends State<_EbookReaderView> {
     try {
       await _webviewController.initialize();
 
+      // Quan trọng: Phải lắng nghe URL loading error nếu có
+      _webviewController.loadingState.listen((event) {
+        if (event == LoadingState.navigationCompleted) {
+          // Webview load xong
+        }
+      });
+
       if (!mounted) return;
 
       setState(() => _isWebviewInitialized = true);
 
       // --- ĐOẠN FIX QUAN TRỌNG ---
-      // Ngay khi Webview sẵn sàng, hãy kiểm tra xem BLoC đã có dữ liệu chưa.
-      // Nếu BLoC đã load xong từ trước, ta phải nạp dữ liệu đó vào ngay.
+      // Kiểm tra xem Bloc đã load xong dữ liệu chưa để nạp vào Webview ngay
       final currentBlocState = context.read<ReaderBloc>().state;
-
-      // Chỉ nạp nếu đã hết loading
-      if (!currentBlocState.isLoading) {
+      if (!currentBlocState.isLoading && currentBlocState.chapters.isNotEmpty) {
         _syncWebview(currentBlocState);
       }
       // ---------------------------
@@ -67,7 +72,7 @@ class _EbookReaderViewState extends State<_EbookReaderView> {
           context: context,
           builder: (context) => AlertDialog(
             title: const Text("Lỗi Webview"),
-            content: Text(e.toString()), // Hiện nguyên văn lỗi
+            content: Text(e.toString()),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
@@ -90,20 +95,24 @@ class _EbookReaderViewState extends State<_EbookReaderView> {
     );
 
     // 2. Tạo HTML và load
-    String html = state.chapters.isNotEmpty
-        ? HtmlHelper.generateChapterHtml(
-            chapter: state.chapters[state.currentIndex],
-            fontSize: state.fontSize,
-            isDarkMode: state.isDarkMode,
-          )
-        : HtmlHelper.generateWelcomeHtml();
+    // Kiểm tra danh sách chương có trống không để tránh lỗi IndexOutOfBound
+    String html = "";
+    if (state.chapters.isNotEmpty &&
+        state.currentIndex < state.chapters.length) {
+      html = HtmlHelper.generateChapterHtml(
+        chapter: state.chapters[state.currentIndex],
+        fontSize: state.fontSize,
+        isDarkMode: state.isDarkMode,
+      );
+    } else {
+      html = HtmlHelper.generateWelcomeHtml(); // Hoặc HTML báo lỗi/loading
+    }
 
     _webviewController.loadStringContent(html);
   }
 
   @override
   Widget build(BuildContext context) {
-    // BlocConsumer = Listener (Logic ngầm) + Builder (Vẽ UI)
     return BlocConsumer<ReaderBloc, ReaderState>(
       listenWhen: (prev, curr) =>
           prev.contentUpdateTimestamp != curr.contentUpdateTimestamp,
@@ -132,16 +141,16 @@ class _EbookReaderViewState extends State<_EbookReaderView> {
                   ),
                 ),
               ),
-              IconButton(
-                icon: const Icon(Icons.folder_open),
-                onPressed: () => bloc.add(ReaderPickFileEvent()),
-              ),
+              // 3. ĐÃ XÓA NÚT "CHỌN FILE" (Folder Icon) Ở ĐÂY
+              // Vì chọn file giờ là nhiệm vụ của Tủ Sách
             ],
           ),
           drawer: ReaderDrawer(
             chapters: state.chapters,
             currentIndex: state.currentIndex,
-            onChapterTap: (index) => bloc.add(ReaderJumpToChapterEvent(index)),
+            onChapterTap: (index) {
+              bloc.add(ReaderJumpToChapterEvent(index));
+            },
           ),
           body: Column(
             children: [
@@ -150,9 +159,13 @@ class _EbookReaderViewState extends State<_EbookReaderView> {
                     ? Webview(_webviewController)
                     : const Center(child: CircularProgressIndicator()),
               ),
+
+              // Thanh điều hướng (Next/Prev)
               if (state.chapters.isNotEmpty)
                 Container(
-                  color: Colors.grey[200],
+                  color: state.isDarkMode
+                      ? Colors.black87
+                      : Colors.grey[200], // Sửa màu nền theo theme
                   padding: const EdgeInsets.symmetric(
                     horizontal: 20,
                     vertical: 10,
@@ -167,9 +180,15 @@ class _EbookReaderViewState extends State<_EbookReaderView> {
                         icon: const Icon(Icons.arrow_back),
                         label: const Text("Trước"),
                       ),
+
+                      // Hiển thị số trang linh hoạt hơn
                       Text(
-                        "Chương ${state.currentIndex + 1} / ${state.chapters.length}",
+                        "${state.currentIndex + 1} / ${state.chapters.length}",
+                        style: TextStyle(
+                          color: state.isDarkMode ? Colors.white : Colors.black,
+                        ),
                       ),
+
                       ElevatedButton.icon(
                         onPressed:
                             state.currentIndex < state.chapters.length - 1

@@ -16,10 +16,10 @@ class DatabaseService {
 
   Future<Database> _initDB() async {
     // Cấu hình cho Windows
-    if (Platform.isWindows || Platform.isLinux) {
-      sqfliteFfiInit();
-      databaseFactory = databaseFactoryFfi;
-    }
+    // if (Platform.isWindows || Platform.isLinux) {
+    //   sqfliteFfiInit();
+    //   databaseFactory = databaseFactoryFfi;
+    // }
 
     final dbFolder = await getApplicationDocumentsDirectory();
     final path = join(dbFolder.path, 'ebook_reader.db');

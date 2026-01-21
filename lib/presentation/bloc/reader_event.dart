@@ -1,42 +1,40 @@
 part of 'reader_bloc.dart';
 
-sealed class ReaderEvent extends Equatable {
+abstract class ReaderEvent extends Equatable {
   const ReaderEvent();
-
   @override
-  // Sửa lỗi: Thêm dấu ? vào Object để đúng chuẩn Equatable
   List<Object?> get props => [];
 }
 
-class ReaderInitEvent extends ReaderEvent {}
+// 1. Cập nhật InitEvent để nhận đường dẫn sách
+class ReaderInitEvent extends ReaderEvent {
+  final String? filePath; // Có thể null nếu mở lại sách cũ
+  const ReaderInitEvent([this.filePath]);
 
-class ReaderPickFileEvent extends ReaderEvent {}
+  @override
+  List<Object?> get props => [filePath];
+}
+
+// 2. XÓA class ReaderPickFileEvent (Không dùng nữa)
 
 class ReaderChangeChapterEvent extends ReaderEvent {
   final int step;
   const ReaderChangeChapterEvent(this.step);
-
   @override
-  // Sửa lỗi: Phải đưa biến step vào props để so sánh
-  List<Object?> get props => [step];
+  List<Object> get props => [step];
 }
 
 class ReaderJumpToChapterEvent extends ReaderEvent {
   final int index;
   const ReaderJumpToChapterEvent(this.index);
-
   @override
-  // Sửa lỗi: Phải đưa biến index vào props
-  List<Object?> get props => [index];
+  List<Object> get props => [index];
 }
 
 class ReaderSettingsUpdateEvent extends ReaderEvent {
   final double? fontSize;
   final bool? isDarkMode;
-
   const ReaderSettingsUpdateEvent({this.fontSize, this.isDarkMode});
-
   @override
-  // Sửa lỗi: Phải đưa các biến vào props
   List<Object?> get props => [fontSize, isDarkMode];
 }

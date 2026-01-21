@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -10,7 +11,6 @@ class LibraryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Cung cấp Bloc cho màn hình này
     return BlocProvider(
       create: (context) => getIt<LibraryBloc>()..add(LoadLibraryEvent()),
       child: Scaffold(
@@ -21,14 +21,13 @@ class LibraryScreen extends StatelessWidget {
           builder: (context) => FloatingActionButton(
             child: const Icon(Icons.add),
             onPressed: () async {
-              // 1. Mở cửa sổ chọn file
               FilePickerResult? result = await FilePicker.platform.pickFiles(
                 type: FileType.custom,
-                allowedExtensions: ['epub'], // Chỉ cho chọn file epub
+                allowedExtensions: ['epub'],
               );
 
               if (result != null && result.files.single.path != null) {
-                // 2. Gửi sự kiện thêm sách vào Bloc
+                // Gửi sự kiện thêm sách
                 context.read<LibraryBloc>().add(
                   AddBookEvent(result.files.single.path!),
                 );
@@ -37,7 +36,7 @@ class LibraryScreen extends StatelessWidget {
           ),
         ),
 
-        // Danh sách sách (Grid)
+        // Danh sách sách
         body: BlocBuilder<LibraryBloc, LibraryState>(
           builder: (context, state) {
             if (state is LibraryLoading) {
@@ -47,42 +46,69 @@ class LibraryScreen extends StatelessWidget {
             if (state is LibraryLoaded) {
               if (state.books.isEmpty) {
                 return const Center(
-                  child: Text("Chưa có sách nào. Bấm + để thêm!"),
+                  child: Text("Chưa có sách. Bấm + để thêm!"),
                 );
               }
 
-              // Hiển thị lưới sách
               return GridView.builder(
                 padding: const EdgeInsets.all(16),
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 3, // 3 cột
-                  childAspectRatio: 0.7, // Tỷ lệ khung hình chữ nhật đứng
+                  childAspectRatio: 0.65, // Tỷ lệ bìa sách
                   crossAxisSpacing: 16,
                   mainAxisSpacing: 16,
                 ),
                 itemCount: state.books.length,
                 itemBuilder: (context, index) {
                   final book = state.books[index];
+
+                  // --- PHẦN QUAN TRỌNG: SỰ KIỆN BẤM VÀO SÁCH ---
                   return GestureDetector(
                     onTap: () {
-                      // Bấm vào thì mở sách
+                      // Chuyển sang màn hình đọc và truyền đường dẫn file
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          // Tạm thời vẫn mở màn hình cũ, ta sẽ sửa logic truyền file sau
-                          builder: (context) => const EbookReaderScreen(),
+                          builder: (context) => EbookReaderScreen(
+                            bookPath: book.filePath, // Truyền path tại đây
+                          ),
                         ),
-                      );
+                      ).then((_) {
+                        // (Tùy chọn) Khi quay lại tủ sách thì load lại để cập nhật tiến độ đọc
+                        context.read<LibraryBloc>().add(LoadLibraryEvent());
+                      });
                     },
                     child: Card(
                       elevation: 4,
+                      clipBehavior: Clip.antiAlias,
                       child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          const Icon(Icons.book, size: 40, color: Colors.blue),
-                          const SizedBox(height: 8),
-                          Padding(
+                          // Ảnh bìa
+                          Expanded(
+                            child: book.coverPath != null
+                                ? Image.file(
+                                    File(book.coverPath!),
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => const Center(
+                                      child: Icon(
+                                        Icons.broken_image,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                  )
+                                : const Center(
+                                    child: Icon(
+                                      Icons.book,
+                                      size: 40,
+                                      color: Colors.blue,
+                                    ),
+                                  ),
+                          ),
+                          // Tên sách
+                          Container(
                             padding: const EdgeInsets.all(8.0),
+                            color: Colors.white,
                             child: Text(
                               book.title,
                               textAlign: TextAlign.center,
@@ -90,6 +116,7 @@ class LibraryScreen extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontWeight: FontWeight.bold,
+                                fontSize: 12,
                               ),
                             ),
                           ),
@@ -100,7 +127,6 @@ class LibraryScreen extends StatelessWidget {
                 },
               );
             }
-
             return const SizedBox();
           },
         ),

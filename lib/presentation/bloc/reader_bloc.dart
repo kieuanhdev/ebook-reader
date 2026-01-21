@@ -1,8 +1,10 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:equatable/equatable.dart';
+import 'package:injectable/injectable.dart';
+import 'package:path/path.dart' as p; // Dùng để lấy tên file nếu cần
+
 import '../../domain/entities/chapter.dart';
 import '../../domain/repositories/ebook_repository.dart';
-import 'package:injectable/injectable.dart'; // Import
 
 part 'reader_event.dart';
 part 'reader_state.dart';
@@ -15,60 +17,70 @@ class ReaderBloc extends Bloc<ReaderEvent, ReaderState> {
     : _repository = repository,
       super(const ReaderState()) {
     on<ReaderInitEvent>(_onInit);
-    on<ReaderPickFileEvent>(_onPickFile);
     on<ReaderChangeChapterEvent>(_onChangeChapter);
     on<ReaderJumpToChapterEvent>(_onJumpToChapter);
     on<ReaderSettingsUpdateEvent>(_onSettingsUpdate);
   }
 
   Future<void> _onInit(ReaderInitEvent event, Emitter<ReaderState> emit) async {
+    // 1. Load cài đặt giao diện (Font, DarkMode)
     var (size, isDark) = await _repository.loadSettings();
-    var history = await _repository.loadLastBook();
 
-    if (history != null) {
-      var (chapters, path, index) = history;
-      emit(
-        state.copyWith(
-          isLoading: false,
-          fontSize: size,
-          isDarkMode: isDark,
-          chapters: chapters,
-          currentFilePath: path,
-          currentIndex: index,
-          bookTitle: "Đang đọc sách",
-          contentUpdateTimestamp: DateTime.now().millisecondsSinceEpoch,
-        ),
-      );
-    } else {
-      emit(
-        state.copyWith(
-          isLoading: false,
-          fontSize: size,
-          isDarkMode: isDark,
-          contentUpdateTimestamp: DateTime.now().millisecondsSinceEpoch,
-        ),
-      );
-    }
-  }
+    // Cập nhật state ban đầu và bật loading
+    emit(state.copyWith(fontSize: size, isDarkMode: isDark, isLoading: true));
 
-  Future<void> _onPickFile(
-    ReaderPickFileEvent event,
-    Emitter<ReaderState> emit,
-  ) async {
     try {
-      var (chapters, path) = await _repository.pickAndParseBook();
-      await _repository.saveProgress(path, 0);
-      emit(
-        state.copyWith(
-          chapters: chapters,
-          currentFilePath: path,
-          currentIndex: 0,
-          bookTitle: "Sách mới",
-          contentUpdateTimestamp: DateTime.now().millisecondsSinceEpoch,
-        ),
-      );
+      // 2. Kiểm tra đầu vào: Có đường dẫn file mới hay là resume sách cũ?
+      if (event.filePath != null) {
+        // --- TRƯỜNG HỢP A: MỞ SÁCH TỪ TỦ SÁCH ---
+        final path = event.filePath!;
+
+        // Gọi Repository để parse file epub từ đường dẫn
+        // Hàm này trả về: Danh sách chương (List<Chapter>) và Tên sách (String)
+        var (chapters, title) = await _repository.parseBook(path);
+
+        // Load tiến độ đọc đã lưu của cuốn sách này (nếu có)
+        int savedIndex = await _repository.loadProgress(path);
+
+        emit(
+          state.copyWith(
+            isLoading: false,
+            chapters: chapters,
+            currentFilePath: path,
+            currentIndex: savedIndex,
+            bookTitle: title,
+            contentUpdateTimestamp: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
+      } else {
+        // --- TRƯỜNG HỢP B: RESUME (MỞ LẠI APP) ---
+        // Load cuốn sách cuối cùng đang đọc dở
+        var history = await _repository.loadLastBook();
+
+        if (history != null) {
+          var (chapters, path, index) = history;
+          // Lấy tên file làm tiêu đề tạm thời vì loadLastBook chỉ trả về path
+          String titleFromPath = p.basename(path);
+
+          emit(
+            state.copyWith(
+              isLoading: false,
+              chapters: chapters,
+              currentFilePath: path,
+              currentIndex: index,
+              bookTitle: titleFromPath, // Hoặc để "Đang đọc tiếp..."
+              contentUpdateTimestamp: DateTime.now().millisecondsSinceEpoch,
+            ),
+          );
+        } else {
+          // Không có lịch sử đọc, tắt loading
+          emit(state.copyWith(isLoading: false));
+        }
+      }
     } catch (e) {
-      // Xử lý lỗi nếu cần
+      print("❌ Lỗi ReaderBloc: $e");
+      // Tắt loading nếu gặp lỗi để tránh treo màn hình
+      emit(state.copyWith(isLoading: false));
     }
   }
 
@@ -86,14 +98,17 @@ class ReaderBloc extends Bloc<ReaderEvent, ReaderState> {
     ReaderJumpToChapterEvent event,
     Emitter<ReaderState> emit,
   ) async {
+    // 1. Cập nhật UI ngay lập tức
     emit(
       state.copyWith(
         currentIndex: event.index,
         contentUpdateTimestamp: DateTime.now().millisecondsSinceEpoch,
       ),
     );
+
+    // 2. Lưu tiến độ xuống ổ cứng (chạy ngầm)
     if (state.currentFilePath != null) {
-      _repository.saveProgress(state.currentFilePath!, event.index);
+      await _repository.saveProgress(state.currentFilePath!, event.index);
     }
   }
 
@@ -103,7 +118,11 @@ class ReaderBloc extends Bloc<ReaderEvent, ReaderState> {
   ) async {
     final newSize = event.fontSize ?? state.fontSize;
     final newMode = event.isDarkMode ?? state.isDarkMode;
+
+    // Lưu settings
     await _repository.saveSettings(newSize, newMode);
+
+    // Cập nhật UI
     emit(
       state.copyWith(
         fontSize: newSize,
