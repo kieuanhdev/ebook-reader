@@ -1,4 +1,4 @@
-import '../../domain/entities/chapter.dart';
+import 'package:my_ebook_reader/features/reader/domain/entities/chapter.dart';
 
 class HtmlHelper {
   // Hàm thuần túy (Pure Function): Nhận dữ liệu -> Trả về HTML String
