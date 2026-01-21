@@ -14,7 +14,10 @@ class LibraryScreen extends StatelessWidget {
     return BlocProvider(
       create: (context) => getIt<LibraryBloc>()..add(LoadLibraryEvent()),
       child: Scaffold(
-        appBar: AppBar(title: const Text("Tủ Sách Của Tôi")),
+        appBar: AppBar(
+          title: const Text("Tủ Sách Của Tôi"),
+          centerTitle: true,
+        ),
 
         // Nút thêm sách (+)
         floatingActionButton: Builder(
@@ -51,16 +54,20 @@ class LibraryScreen extends StatelessWidget {
               }
 
               return GridView.builder(
-                padding: const EdgeInsets.all(16),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3, // 3 cột
-                  childAspectRatio: 0.65, // Tỷ lệ bìa sách
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 180,
+                  childAspectRatio: 0.62,
                   crossAxisSpacing: 16,
                   mainAxisSpacing: 16,
                 ),
                 itemCount: state.books.length,
                 itemBuilder: (context, index) {
                   final book = state.books[index];
+
+                  final progressPercent = (book.progress * 100)
+                      .clamp(0, 100)
+                      .toStringAsFixed(0);
 
                   // --- PHẦN QUAN TRỌNG: SỰ KIỆN BẤM VÀO SÁCH ---
                   return GestureDetector(
@@ -79,8 +86,12 @@ class LibraryScreen extends StatelessWidget {
                       });
                     },
                     child: Card(
-                      elevation: 4,
+                      elevation: 6,
+                      shadowColor: Colors.black.withValues(alpha: 0.2),
                       clipBehavior: Clip.antiAlias,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
                       child: Stack(
                         children: [
                           Column(
@@ -100,27 +111,55 @@ class LibraryScreen extends StatelessWidget {
                                               ),
                                             ),
                                       )
-                                    : const Center(
-                                        child: Icon(
-                                          Icons.book,
-                                          size: 40,
-                                          color: Colors.blue,
+                                    : Container(
+                                        color: Colors.blueGrey.shade50,
+                                        child: const Center(
+                                          child: Icon(
+                                            Icons.menu_book_rounded,
+                                            size: 48,
+                                            color: Colors.blueGrey,
+                                          ),
                                         ),
                                       ),
                               ),
                               // Tên sách
                               Container(
-                                padding: const EdgeInsets.all(8.0),
+                                padding:
+                                    const EdgeInsets.fromLTRB(10, 8, 10, 6),
                                 color: Colors.white,
-                                child: Text(
-                                  book.title,
-                                  textAlign: TextAlign.center,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      book.title,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(6),
+                                      child: LinearProgressIndicator(
+                                        minHeight: 6,
+                                        value: (book.progress)
+                                            .clamp(0.0, 1.0),
+                                        backgroundColor:
+                                            Colors.blueGrey.shade100,
+                                        color: Colors.blueAccent,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      "$progressPercent% đã đọc",
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        color: Colors.black54,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -130,7 +169,10 @@ class LibraryScreen extends StatelessWidget {
                             right: 4,
                             child: IconButton(
                               tooltip: "Xóa sách",
-                              icon: const Icon(Icons.delete, color: Colors.red),
+                              icon: const Icon(
+                                Icons.delete_outline,
+                                color: Colors.redAccent,
+                              ),
                               onPressed: () async {
                                 final confirmed = await showDialog<bool>(
                                   context: context,
