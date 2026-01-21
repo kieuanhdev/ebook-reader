@@ -82,61 +82,64 @@ class LibraryRepositoryImpl implements LibraryRepository {
     String? localCoverPath;
     double progress = 0.0;
 
-    try {
-      // 1. Cố gắng đọc file chuẩn
-      final bytes = await file.readAsBytes();
-      final epubBook = await epub.EpubReader.readBook(bytes);
+    final extension = p.extension(filePath).toLowerCase();
+    if (extension != '.pdf') {
+      try {
+        // 1. Cố gắng đọc file chuẩn
+        final bytes = await file.readAsBytes();
+        final epubBook = await epub.EpubReader.readBook(bytes);
 
-      // 2. Nếu đọc thành công, cập nhật thông tin xịn
-      title = epubBook.Title ?? title;
-      author = epubBook.Author ?? author;
+        // 2. Nếu đọc thành công, cập nhật thông tin xịn
+        title = epubBook.Title ?? title;
+        author = epubBook.Author ?? author;
 
-      // 3. LOGIC LẤY ẢNH BÌA THÔNG MINH (IMPROVED)
-      List<int>? coverData;
+        // 3. LOGIC LẤY ẢNH BÌA THÔNG MINH (IMPROVED)
+        List<int>? coverData;
 
-      // Ưu tiên 1: Ảnh bìa được khai báo trong Metadata
-      if (epubBook.CoverImage != null) {
-        // epubx trả về Image object, ta cần encode sang PNG/JPG
-        // Tuy nhiên, thường CoverImage trong epubx khá phức tạp để convert ngược lại bytes ngay.
-        // Mẹo: Hầu hết các sách, ảnh bìa cũng nằm trong danh sách Images.
-      }
+        // Ưu tiên 1: Ảnh bìa được khai báo trong Metadata
+        if (epubBook.CoverImage != null) {
+          // epubx trả về Image object, ta cần encode sang PNG/JPG
+          // Tuy nhiên, thường CoverImage trong epubx khá phức tạp để convert ngược lại bytes ngay.
+          // Mẹo: Hầu hết các sách, ảnh bìa cũng nằm trong danh sách Images.
+        }
 
-      final images = epubBook.Content?.Images ??
-          <String, epub.EpubByteContentFile>{};
+        final images = epubBook.Content?.Images ??
+            <String, epub.EpubByteContentFile>{};
 
-      // Ưu tiên 2: Tìm file ảnh có tên chứa chữ "cover" trong danh sách ảnh
-      if (images.isNotEmpty) {
-        for (var key in images.keys) {
-          if (key.toLowerCase().contains('cover')) {
-            coverData = images[key]!.Content;
-            break;
+        // Ưu tiên 2: Tìm file ảnh có tên chứa chữ "cover" trong danh sách ảnh
+        if (images.isNotEmpty) {
+          for (var key in images.keys) {
+            if (key.toLowerCase().contains('cover')) {
+              coverData = images[key]!.Content;
+              break;
+            }
           }
         }
-      }
 
-      // Ưu tiên 3: Lấy đại cái ảnh đầu tiên tìm thấy trong sách (Còn hơn là không có)
-      if (coverData == null && images.isNotEmpty) {
-        coverData = images.values.first.Content;
-      }
-
-      // 4. Lưu ảnh bìa ra file riêng (Nếu tìm thấy)
-      if (coverData != null) {
-        final appDir = await getApplicationDocumentsDirectory();
-        final coverDir = Directory(p.join(appDir.path, 'covers'));
-        if (!await coverDir.exists()) {
-          await coverDir.create();
+        // Ưu tiên 3: Lấy đại cái ảnh đầu tiên tìm thấy trong sách (Còn hơn là không có)
+        if (coverData == null && images.isNotEmpty) {
+          coverData = images.values.first.Content;
         }
-        final fileName = '${const Uuid().v4()}.jpg';
-        final coverFile = File(p.join(coverDir.path, fileName));
-        await coverFile.writeAsBytes(coverData);
-        localCoverPath = coverFile.path;
+
+        // 4. Lưu ảnh bìa ra file riêng (Nếu tìm thấy)
+        if (coverData != null) {
+          final appDir = await getApplicationDocumentsDirectory();
+          final coverDir = Directory(p.join(appDir.path, 'covers'));
+          if (!await coverDir.exists()) {
+            await coverDir.create();
+          }
+          final fileName = '${const Uuid().v4()}.jpg';
+          final coverFile = File(p.join(coverDir.path, fileName));
+          await coverFile.writeAsBytes(coverData);
+          localCoverPath = coverFile.path;
+        }
+      } catch (e) {
+        // ⚠️ QUAN TRỌNG: NẾU FILE LỖI (RangeError, FormatError...)
+        // Ta chỉ in lỗi ra để biết, nhưng KHÔNG throw exception nữa.
+        // Vẫn tiếp tục chạy xuống dưới để lưu sách với thông tin cơ bản (Tên file).
+        print("⚠️ File Epub không chuẩn hoặc bị lỗi cấu trúc: $e");
+        print("👉 Chuyển sang chế độ Safe Mode: Lưu bằng tên file.");
       }
-    } catch (e) {
-      // ⚠️ QUAN TRỌNG: NẾU FILE LỖI (RangeError, FormatError...)
-      // Ta chỉ in lỗi ra để biết, nhưng KHÔNG throw exception nữa.
-      // Vẫn tiếp tục chạy xuống dưới để lưu sách với thông tin cơ bản (Tên file).
-      print("⚠️ File Epub không chuẩn hoặc bị lỗi cấu trúc: $e");
-      print("👉 Chuyển sang chế độ Safe Mode: Lưu bằng tên file.");
     }
 
     // 5. LƯU VÀO DB (Dù file chuẩn hay lỗi thì vẫn chạy đoạn này)
@@ -186,6 +189,7 @@ class LibraryRepositoryImpl implements LibraryRepository {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('progress_$filePath');
       await prefs.remove('progress_percent_$filePath');
+      await prefs.remove('progress_pdf_page_$filePath');
       final lastPath = prefs.getString('last_book_path');
       if (lastPath == filePath) {
         await prefs.remove('last_book_path');

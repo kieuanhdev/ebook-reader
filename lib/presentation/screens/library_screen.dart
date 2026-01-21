@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:my_ebook_reader/injection.dart';
 import 'package:my_ebook_reader/presentation/bloc/library/library_bloc.dart';
+import 'package:my_ebook_reader/presentation/screens/pdf_reader_screen.dart';
 import 'package:my_ebook_reader/presentation/screens/reader_screen.dart';
+import 'package:path/path.dart' as p;
 
 enum LibraryFilter { all, unread, reading, finished }
 
@@ -56,7 +58,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
             onPressed: () async {
               FilePickerResult? result = await FilePicker.platform.pickFiles(
                 type: FileType.custom,
-                allowedExtensions: ['epub'],
+                allowedExtensions: ['epub', 'pdf'],
               );
 
               if (result != null && result.files.single.path != null) {
@@ -181,13 +183,22 @@ class _LibraryScreenState extends State<LibraryScreen> {
                         // --- PHẦN QUAN TRỌNG: SỰ KIỆN BẤM VÀO SÁCH ---
                         return GestureDetector(
                           onTap: () {
+                            final extension =
+                                p.extension(book.filePath).toLowerCase();
+                            final isPdf = extension == '.pdf';
+
                             // Chuyển sang màn hình đọc và truyền đường dẫn file
                             Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (context) => EbookReaderScreen(
-                                  bookPath: book.filePath, // Truyền path tại đây
-                                ),
+                                builder: (context) => isPdf
+                                    ? PdfReaderScreen(
+                                        filePath: book.filePath,
+                                      )
+                                    : EbookReaderScreen(
+                                        bookPath:
+                                            book.filePath, // Truyền path tại đây
+                                      ),
                               ),
                             ).then((_) {
                               // (Tùy chọn) Khi quay lại tủ sách thì load lại để cập nhật tiến độ đọc
