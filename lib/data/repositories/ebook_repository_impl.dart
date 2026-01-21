@@ -10,6 +10,7 @@ import 'package:injectable/injectable.dart';
 import 'package:path/path.dart' as p; // Cần import thư viện này để lấy tên file
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/reader_layout.dart';
 import '../../domain/entities/chapter.dart';
 import '../../domain/repositories/ebook_repository.dart';
 
@@ -235,18 +236,25 @@ class EbookRepositoryImpl implements EbookRepository {
   // --- CÀI ĐẶT (SETTINGS) ---
 
   @override
-  Future<(double, bool)> loadSettings() async {
+  Future<(double, bool, ReaderLayout)> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     double fontSize =
         prefs.getDouble('settings_font_size') ?? 18.0; // Mặc định 18 cho dễ đọc
     bool isDarkMode = prefs.getBool('settings_dark_mode') ?? false;
-    return (fontSize, isDarkMode);
+    final layoutValue = prefs.getString('settings_layout');
+    final layout = readerLayoutFromString(layoutValue);
+    return (fontSize, isDarkMode, layout);
   }
 
   @override
-  Future<void> saveSettings(double fontSize, bool isDarkMode) async {
+  Future<void> saveSettings(
+    double fontSize,
+    bool isDarkMode,
+    ReaderLayout layout,
+  ) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('settings_font_size', fontSize);
     await prefs.setBool('settings_dark_mode', isDarkMode);
+    await prefs.setString('settings_layout', readerLayoutToString(layout));
   }
 }

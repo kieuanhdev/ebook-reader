@@ -3,6 +3,7 @@ import 'package:equatable/equatable.dart';
 import 'package:injectable/injectable.dart';
 import 'package:path/path.dart' as p; // Dùng để lấy tên file nếu cần
 
+import '../../core/reader_layout.dart';
 import '../../domain/entities/chapter.dart';
 import '../../domain/repositories/ebook_repository.dart';
 
@@ -24,10 +25,17 @@ class ReaderBloc extends Bloc<ReaderEvent, ReaderState> {
 
   Future<void> _onInit(ReaderInitEvent event, Emitter<ReaderState> emit) async {
     // 1. Load cài đặt giao diện (Font, DarkMode)
-    var (size, isDark) = await _repository.loadSettings();
+    var (size, isDark, layout) = await _repository.loadSettings();
 
     // Cập nhật state ban đầu và bật loading
-    emit(state.copyWith(fontSize: size, isDarkMode: isDark, isLoading: true));
+    emit(
+      state.copyWith(
+        fontSize: size,
+        isDarkMode: isDark,
+        layout: layout,
+        isLoading: true,
+      ),
+    );
 
     try {
       // 2. Kiểm tra đầu vào: Có đường dẫn file mới hay là resume sách cũ?
@@ -122,15 +130,17 @@ class ReaderBloc extends Bloc<ReaderEvent, ReaderState> {
   ) async {
     final newSize = event.fontSize ?? state.fontSize;
     final newMode = event.isDarkMode ?? state.isDarkMode;
+    final newLayout = event.layout ?? state.layout;
 
     // Lưu settings
-    await _repository.saveSettings(newSize, newMode);
+    await _repository.saveSettings(newSize, newMode, newLayout);
 
     // Cập nhật UI
     emit(
       state.copyWith(
         fontSize: newSize,
         isDarkMode: newMode,
+        layout: newLayout,
         contentUpdateTimestamp: DateTime.now().millisecondsSinceEpoch,
       ),
     );

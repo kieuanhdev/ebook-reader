@@ -4,6 +4,7 @@ import 'package:my_ebook_reader/injection.dart';
 import 'package:webview_windows/webview_windows.dart';
 
 import '../../core/html_helper.dart'; // Đảm bảo đường dẫn đúng
+import '../../core/reader_layout.dart';
 import '../bloc/reader_bloc.dart';
 import 'reader_drawer.dart';
 import 'reader_settings_dialog.dart';
@@ -103,6 +104,7 @@ class _EbookReaderViewState extends State<_EbookReaderView> {
         chapter: state.chapters[state.currentIndex],
         fontSize: state.fontSize,
         isDarkMode: state.isDarkMode,
+        layoutMode: readerLayoutToString(state.layout),
       );
     } else {
       html = HtmlHelper.generateWelcomeHtml(); // Hoặc HTML báo lỗi/loading
@@ -137,11 +139,15 @@ class _EbookReaderViewState extends State<_EbookReaderView> {
                   builder: (_) => ReaderSettingsDialog(
                     isDarkMode: state.isDarkMode,
                     fontSize: state.fontSize,
+                    layout: state.layout,
                     onSettingsChanged: (isDark, size) => bloc.add(
                       ReaderSettingsUpdateEvent(
                         isDarkMode: isDark,
                         fontSize: size,
                       ),
+                    ),
+                    onLayoutChanged: (layout) => bloc.add(
+                      ReaderSettingsUpdateEvent(layout: layout),
                     ),
                   ),
                 ),

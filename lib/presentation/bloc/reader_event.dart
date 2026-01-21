@@ -34,7 +34,12 @@ class ReaderJumpToChapterEvent extends ReaderEvent {
 class ReaderSettingsUpdateEvent extends ReaderEvent {
   final double? fontSize;
   final bool? isDarkMode;
-  const ReaderSettingsUpdateEvent({this.fontSize, this.isDarkMode});
+  final ReaderLayout? layout;
+  const ReaderSettingsUpdateEvent({
+    this.fontSize,
+    this.isDarkMode,
+    this.layout,
+  });
   @override
-  List<Object?> get props => [fontSize, isDarkMode];
+  List<Object?> get props => [fontSize, isDarkMode, layout];
 }

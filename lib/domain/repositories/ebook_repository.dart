@@ -1,4 +1,5 @@
 import '../entities/chapter.dart';
+import '../../core/reader_layout.dart';
 
 abstract class EbookRepository {
   // 1. Chức năng chọn file từ máy (Nếu bạn vẫn muốn dùng nút folder cũ)
@@ -11,8 +12,12 @@ abstract class EbookRepository {
   Future<(List<Chapter>, String, int)?> loadLastBook();
 
   // 4. Cài đặt giao diện (Settings)
-  Future<(double, bool)> loadSettings();
-  Future<void> saveSettings(double fontSize, bool isDarkMode);
+  Future<(double, bool, ReaderLayout)> loadSettings();
+  Future<void> saveSettings(
+    double fontSize,
+    bool isDarkMode,
+    ReaderLayout layout,
+  );
 
   // 5. Quản lý tiến độ đọc (Progress)
   Future<int> loadProgress(String filePath);

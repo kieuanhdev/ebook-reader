@@ -10,6 +10,7 @@ class ReaderState extends Equatable {
   final String? currentFilePath;
   final double fontSize;
   final bool isDarkMode;
+  final ReaderLayout layout;
   final int contentUpdateTimestamp;
 
   const ReaderState({
@@ -20,6 +21,7 @@ class ReaderState extends Equatable {
     this.currentFilePath,
     this.fontSize = 16.0,
     this.isDarkMode = false,
+    this.layout = ReaderLayout.single,
     this.contentUpdateTimestamp = 0,
   });
 
@@ -31,6 +33,7 @@ class ReaderState extends Equatable {
     String? currentFilePath,
     double? fontSize,
     bool? isDarkMode,
+    ReaderLayout? layout,
     int? contentUpdateTimestamp,
   }) {
     return ReaderState(
@@ -41,6 +44,7 @@ class ReaderState extends Equatable {
       currentFilePath: currentFilePath ?? this.currentFilePath,
       fontSize: fontSize ?? this.fontSize,
       isDarkMode: isDarkMode ?? this.isDarkMode,
+      layout: layout ?? this.layout,
       contentUpdateTimestamp:
           contentUpdateTimestamp ?? this.contentUpdateTimestamp,
     );
@@ -55,6 +59,7 @@ class ReaderState extends Equatable {
     currentFilePath,
     fontSize,
     isDarkMode,
+    layout,
     contentUpdateTimestamp,
   ];
 }
