@@ -76,21 +76,22 @@ class LibraryRepositoryImpl implements LibraryRepository {
         // Mẹo: Hầu hết các sách, ảnh bìa cũng nằm trong danh sách Images.
       }
 
+      final images = epubBook.Content?.Images ??
+          <String, epub.EpubByteContentFile>{};
+
       // Ưu tiên 2: Tìm file ảnh có tên chứa chữ "cover" trong danh sách ảnh
-      if (coverData == null && epubBook.Content?.Images != null) {
-        for (var key in epubBook.Content!.Images!.keys) {
+      if (images.isNotEmpty) {
+        for (var key in images.keys) {
           if (key.toLowerCase().contains('cover')) {
-            coverData = epubBook.Content!.Images![key]!.Content;
+            coverData = images[key]!.Content;
             break;
           }
         }
       }
 
       // Ưu tiên 3: Lấy đại cái ảnh đầu tiên tìm thấy trong sách (Còn hơn là không có)
-      if (coverData == null &&
-          epubBook.Content?.Images != null &&
-          epubBook.Content!.Images!.isNotEmpty) {
-        coverData = epubBook.Content!.Images!.values.first.Content;
+      if (coverData == null && images.isNotEmpty) {
+        coverData = images.values.first.Content;
       }
 
       // 4. Lưu ảnh bìa ra file riêng (Nếu tìm thấy)
@@ -139,6 +140,21 @@ class LibraryRepositoryImpl implements LibraryRepository {
   @override
   Future<void> deleteBook(String id) async {
     final db = await _dbService.database;
+    final rows = await db.query(
+      'books',
+      columns: ['coverPath'],
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    final coverPath =
+        rows.isNotEmpty ? rows.first['coverPath'] as String? : null;
+    if (coverPath != null && coverPath.isNotEmpty) {
+      final coverFile = File(coverPath);
+      if (await coverFile.exists()) {
+        await coverFile.delete();
+      }
+    }
     await db.delete('books', where: 'id = ?', whereArgs: [id]);
   }
 }

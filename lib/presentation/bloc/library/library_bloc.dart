@@ -14,6 +14,11 @@ class AddBookEvent extends LibraryEvent {
   AddBookEvent(this.filePath);
 }
 
+class DeleteBookEvent extends LibraryEvent {
+  final Book book;
+  DeleteBookEvent(this.book);
+}
+
 // --- States ---
 abstract class LibraryState {}
 
@@ -52,6 +57,20 @@ class LibraryBloc extends Bloc<LibraryEvent, LibraryState> {
         emit(LibraryLoaded(books));
       } catch (e) {
         print("❌ Lỗi trong Bloc: $e");
+        final books = await _repository.getBooks();
+        emit(LibraryLoaded(books));
+      }
+    });
+
+    // Xử lý khi xóa sách
+    on<DeleteBookEvent>((event, emit) async {
+      emit(LibraryLoading());
+      try {
+        await _repository.deleteBook(event.book.id);
+        final books = await _repository.getBooks();
+        emit(LibraryLoaded(books));
+      } catch (e) {
+        print("❌ Lỗi khi xóa sách: $e");
         final books = await _repository.getBooks();
         emit(LibraryLoaded(books));
       }

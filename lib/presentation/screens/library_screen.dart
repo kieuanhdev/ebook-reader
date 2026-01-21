@@ -81,43 +81,85 @@ class LibraryScreen extends StatelessWidget {
                     child: Card(
                       elevation: 4,
                       clipBehavior: Clip.antiAlias,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                      child: Stack(
                         children: [
-                          // Ảnh bìa
-                          Expanded(
-                            child: book.coverPath != null
-                                ? Image.file(
-                                    File(book.coverPath!),
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => const Center(
-                                      child: Icon(
-                                        Icons.broken_image,
-                                        color: Colors.grey,
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              // Ảnh bìa
+                              Expanded(
+                                child: book.coverPath != null
+                                    ? Image.file(
+                                        File(book.coverPath!),
+                                        fit: BoxFit.cover,
+                                        errorBuilder:
+                                            (_, __, ___) => const Center(
+                                              child: Icon(
+                                                Icons.broken_image,
+                                                color: Colors.grey,
+                                              ),
+                                            ),
+                                      )
+                                    : const Center(
+                                        child: Icon(
+                                          Icons.book,
+                                          size: 40,
+                                          color: Colors.blue,
+                                        ),
                                       ),
-                                    ),
-                                  )
-                                : const Center(
-                                    child: Icon(
-                                      Icons.book,
-                                      size: 40,
-                                      color: Colors.blue,
-                                    ),
-                                  ),
-                          ),
-                          // Tên sách
-                          Container(
-                            padding: const EdgeInsets.all(8.0),
-                            color: Colors.white,
-                            child: Text(
-                              book.title,
-                              textAlign: TextAlign.center,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
                               ),
+                              // Tên sách
+                              Container(
+                                padding: const EdgeInsets.all(8.0),
+                                color: Colors.white,
+                                child: Text(
+                                  book.title,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          Positioned(
+                            top: 4,
+                            right: 4,
+                            child: IconButton(
+                              tooltip: "Xóa sách",
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              onPressed: () async {
+                                final confirmed = await showDialog<bool>(
+                                  context: context,
+                                  builder: (dialogContext) => AlertDialog(
+                                    title: const Text("Xóa sách?"),
+                                    content: Text(
+                                      "Bạn có chắc muốn xóa \"${book.title}\" khỏi tủ sách?",
+                                    ),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(dialogContext, false),
+                                        child: const Text("Hủy"),
+                                      ),
+                                      TextButton(
+                                        onPressed: () =>
+                                            Navigator.pop(dialogContext, true),
+                                        child: const Text("Xóa"),
+                                      ),
+                                    ],
+                                  ),
+                                );
+
+                                if (confirmed == true && context.mounted) {
+                                  context
+                                      .read<LibraryBloc>()
+                                      .add(DeleteBookEvent(book));
+                                }
+                              },
                             ),
                           ),
                         ],
