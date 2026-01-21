@@ -18,5 +18,9 @@ abstract class EbookRepository {
   Future<int> loadProgress(String filePath);
 
   // Bạn chỉ giữ lại DUY NHẤT 1 dòng saveProgress này thôi:
-  Future<void> saveProgress(String filePath, int index);
+  Future<void> saveProgress(
+    String filePath,
+    int index,
+    int totalChapters,
+  );
 }

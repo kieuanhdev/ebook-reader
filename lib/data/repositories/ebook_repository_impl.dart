@@ -126,11 +126,18 @@ class EbookRepositoryImpl implements EbookRepository {
   }
 
   @override
-  Future<void> saveProgress(String filePath, int currentChapterIndex) async {
+  Future<void> saveProgress(
+    String filePath,
+    int currentChapterIndex,
+    int totalChapters,
+  ) async {
     final prefs = await SharedPreferences.getInstance();
 
     // 1. Lưu vị trí của sách này
     await prefs.setInt('progress_$filePath', currentChapterIndex);
+    final denom = (totalChapters - 1) > 0 ? (totalChapters - 1) : 1;
+    final percent = (currentChapterIndex / denom).clamp(0.0, 1.0);
+    await prefs.setDouble('progress_percent_$filePath', percent);
 
     // 2. Lưu luôn đây là cuốn sách cuối cùng (để tính năng History hoạt động)
     await prefs.setString('last_book_path', filePath);

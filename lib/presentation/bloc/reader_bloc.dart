@@ -108,7 +108,11 @@ class ReaderBloc extends Bloc<ReaderEvent, ReaderState> {
 
     // 2. Lưu tiến độ xuống ổ cứng (chạy ngầm)
     if (state.currentFilePath != null) {
-      await _repository.saveProgress(state.currentFilePath!, event.index);
+      await _repository.saveProgress(
+        state.currentFilePath!,
+        event.index,
+        state.chapters.length,
+      );
     }
   }
 

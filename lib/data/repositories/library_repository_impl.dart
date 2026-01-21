@@ -20,32 +20,56 @@ class LibraryRepositoryImpl implements LibraryRepository {
   Future<List<Book>> getBooks() async {
     final db = await _dbService.database;
     final maps = await db.query('books');
+    final prefs = await SharedPreferences.getInstance();
 
     print("📂 Đang đọc ${maps.length} dòng từ DB");
 
-    return List.generate(maps.length, (i) {
+    final books = <Book>[];
+    for (var i = 0; i < maps.length; i++) {
       // Dùng try-catch nhỏ ở đây để nếu 1 cuốn lỗi thì không chết cả App
       try {
-        return Book(
+        final filePath = maps[i]['filePath'] as String;
+        final savedProgress =
+            prefs.getDouble('progress_percent_$filePath');
+        final dbProgress = (maps[i]['progress'] as num?)?.toDouble() ?? 0.0;
+        final progress = savedProgress ?? dbProgress;
+
+        // Đồng bộ lại DB nếu SharedPreferences mới hơn
+        if (savedProgress != null && savedProgress != dbProgress) {
+          await db.update(
+            'books',
+            {'progress': savedProgress},
+            where: 'id = ?',
+            whereArgs: [maps[i]['id']],
+          );
+        }
+
+        books.add(
+          Book(
           id: maps[i]['id'] as String,
           title: maps[i]['title'] as String,
           author: maps[i]['author'] as String? ?? "Unknown", // Xử lý null
-          filePath: maps[i]['filePath'] as String,
+          filePath: filePath,
           coverPath: maps[i]['coverPath'] as String?,
           // Ép kiểu an toàn hơn: Nếu null thì về 0.0
-          progress: (maps[i]['progress'] as num?)?.toDouble() ?? 0.0,
+          progress: progress,
+        ),
         );
       } catch (e) {
         print("⚠️ Lỗi map dữ liệu sách index $i: $e");
         // Trả về một cuốn sách "bù nhìn" để không crash list
-        return Book(
-          id: "error",
-          title: "Lỗi dữ liệu",
-          filePath: "",
-          progress: 0,
+        books.add(
+          Book(
+            id: "error",
+            title: "Lỗi dữ liệu",
+            filePath: "",
+            progress: 0,
+          ),
         );
       }
-    });
+    }
+
+    return books;
   }
 
   @override
@@ -161,6 +185,7 @@ class LibraryRepositoryImpl implements LibraryRepository {
     if (filePath != null && filePath.isNotEmpty) {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('progress_$filePath');
+      await prefs.remove('progress_percent_$filePath');
       final lastPath = prefs.getString('last_book_path');
       if (lastPath == filePath) {
         await prefs.remove('last_book_path');
