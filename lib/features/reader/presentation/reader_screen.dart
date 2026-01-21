@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:my_ebook_reader/app/di/injection.dart';
@@ -38,7 +39,6 @@ class _EbookReaderViewState extends State<_EbookReaderView> {
   bool _isWebviewInitialized = false;
   int _currentPage = 1;
   int _totalPages = 1;
-  bool _pendingPaginationUpdate = false;
   bool _pendingGoToLastPage = false;
 
   @override
@@ -52,9 +52,7 @@ class _EbookReaderViewState extends State<_EbookReaderView> {
       await _webviewController.initialize();
 
       _webviewController.loadingState.listen((event) {
-        if (event == LoadingState.navigationCompleted &&
-            _pendingPaginationUpdate) {
-          _pendingPaginationUpdate = false;
+        if (event == LoadingState.navigationCompleted) {
           _refreshPagination();
         }
       });
@@ -110,7 +108,6 @@ class _EbookReaderViewState extends State<_EbookReaderView> {
     if (state.layout != ReaderLayout.scroll) {
       _currentPage = 1;
       _totalPages = 1;
-      _pendingPaginationUpdate = true;
     }
 
     _webviewController.loadStringContent(html);
@@ -118,14 +115,11 @@ class _EbookReaderViewState extends State<_EbookReaderView> {
 
   Future<void> _refreshPagination() async {
     if (!mounted) return;
-    final total = await _callPageScript(
-      'window.readerPaging?.getPageCount?.() ?? 1',
+    await _callPageScript(
+      'window.readerPaging?.reflow?.() ?? 1',
       fallback: 1,
     );
-    final current = await _callPageScript(
-      'window.readerPaging?.getCurrentPage?.() ?? 1',
-      fallback: 1,
-    );
+    final (total, current) = await _readPagingState();
 
     if (!mounted) return;
     setState(() {
@@ -151,6 +145,32 @@ class _EbookReaderViewState extends State<_EbookReaderView> {
     }
   }
 
+  Future<(int, int)> _readPagingState() async {
+    try {
+      final raw = await _webviewController.executeScript(
+        "window.readerPaging?.getState?.() ?? '{\"total\":1,\"current\":1}'",
+      );
+      if (raw == null) return (_totalPages, _currentPage);
+      var text = raw.toString();
+      if (text.startsWith('"')) {
+        text = jsonDecode(text) as String;
+      }
+      if (text.contains('{')) {
+        final decoded = jsonDecode(text) as Map<String, dynamic>;
+        final total = (decoded['total'] as num?)?.toInt() ?? _totalPages;
+        final current = (decoded['current'] as num?)?.toInt() ?? _currentPage;
+        return (total, current);
+      }
+      final matches = RegExp(r'-?\\d+').allMatches(text).toList();
+      if (matches.length >= 2) {
+        final total = int.parse(matches[0].group(0)!);
+        final current = int.parse(matches[1].group(0)!);
+        return (total, current);
+      }
+    } catch (_) {}
+    return (_totalPages, _currentPage);
+  }
+
   Future<void> _goToPage(int page) async {
     final updated = await _callPageScript(
       'window.readerPaging?.goToPage?.($page) ?? $page',
@@ -162,8 +182,14 @@ class _EbookReaderViewState extends State<_EbookReaderView> {
 
   Future<void> _nextPageOrChapter(ReaderBloc bloc, ReaderState state) async {
     if (state.layout == ReaderLayout.scroll) return;
-    if (_currentPage < _totalPages) {
-      await _goToPage(_currentPage + 1);
+    final (total, current) = await _readPagingState();
+    if (!mounted) return;
+    setState(() {
+      _totalPages = total;
+      _currentPage = current;
+    });
+    if (current < total) {
+      await _goToPage(current + 1);
       return;
     }
     if (state.currentIndex < state.chapters.length - 1) {
@@ -173,8 +199,14 @@ class _EbookReaderViewState extends State<_EbookReaderView> {
 
   Future<void> _prevPageOrChapter(ReaderBloc bloc, ReaderState state) async {
     if (state.layout == ReaderLayout.scroll) return;
-    if (_currentPage > 1) {
-      await _goToPage(_currentPage - 1);
+    final (total, current) = await _readPagingState();
+    if (!mounted) return;
+    setState(() {
+      _totalPages = total;
+      _currentPage = current;
+    });
+    if (current > 1) {
+      await _goToPage(current - 1);
       return;
     }
     if (state.currentIndex > 0) {

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:my_ebook_reader/features/reader/domain/entities/chapter.dart';
 
 class HtmlHelper {
@@ -14,11 +15,6 @@ class HtmlHelper {
     final isScroll = layoutMode == 'scroll';
     const padding = 20;
     final columnGap = isSpread ? 40 : 0;
-    final columnWidth = isScroll
-        ? "auto"
-        : isSpread
-            ? "calc((100vw - ${columnGap}px) / 2)"
-            : "100vw";
 
     return """
       <!DOCTYPE html>
@@ -35,23 +31,24 @@ class HtmlHelper {
             background-color: $cssBg;
             color: $cssColor;
           }
+          #viewport {
+            width: 100%;
+            max-width: 1080px;
+            height: 100vh;
+            overflow: hidden;
+            margin: 0 auto;
+          }
           #reader {
             font-family: Arial, sans-serif;
             line-height: 1.6;
             font-size: ${fontSize}px;
             box-sizing: border-box;
             height: ${isScroll ? "auto" : "100vh"};
-            width: 100vw;
-            --page-padding: ${padding}px;
-            --column-gap: ${isScroll ? 0 : columnGap}px;
-            --column-width: $columnWidth;
-            --page-width: calc(var(--column-width) - (var(--page-padding) * 2));
-            column-gap: var(--column-gap);
-            column-width: var(--column-width);
-            column-fill: auto;
+            display: inline-block;
+            width: max-content;
           }
           #reader .page {
-            width: ${isScroll ? "auto" : "var(--page-width)"};
+            width: 100%;
             padding: ${padding}px;
             box-sizing: border-box;
           }
@@ -64,34 +61,89 @@ class HtmlHelper {
         </style>
       </head>
       <body>
-        <div id="reader">
-          <div class="page">
-            ${chapter.htmlContent ?? ""}
-          </div>
+        <div id="viewport">
+          <div id="reader"><div class="page"></div></div>
         </div>
         <script>
           (function() {
             const pageMode = ${isScroll ? "false" : "true"};
             const spreadMode = ${isSpread ? "true" : "false"};
             const reader = document.getElementById('reader');
+            const viewport = document.getElementById('viewport');
+            const page = reader ? reader.querySelector('.page') : null;
             let currentPage = 1;
-            const imgPlaceholder =
-              'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+            let totalPages = 1;
+            let columnWidth = 1;
+            let columnGap = 0;
+            let pageStride = 1;
+            const rawContent = ${jsonEncode(chapter.htmlContent ?? "")};
             function pageWidth() {
+              if (viewport) {
+                const w = viewport.clientWidth;
+                if (w && w > 0) return w;
+              }
               return window.innerWidth || document.documentElement.clientWidth || 1;
             }
-            function columnStride() {
-              if (!reader) return pageWidth();
-              const styles = window.getComputedStyle(reader);
-              const colWidth = parseFloat(styles.columnWidth || '0');
-              const gap = parseFloat(styles.columnGap || '0');
-              if (!colWidth || Number.isNaN(colWidth)) return pageWidth();
-              return colWidth + gap;
+            function pageHeight() {
+              if (viewport) {
+                const h = viewport.clientHeight;
+                if (h && h > 0) return h;
+              }
+              return window.innerHeight || document.documentElement.clientHeight || 1;
+            }
+            function setViewport() {
+              if (!viewport) return;
+              const maxWidth = 1080;
+              const targetWidth = Math.min(
+                maxWidth,
+                window.innerWidth || document.documentElement.clientWidth || maxWidth
+              );
+              viewport.style.width = targetWidth + 'px';
+              viewport.style.height = pageMode ? pageHeight() + 'px' : 'auto';
+              viewport.style.overflow = pageMode ? 'hidden' : 'auto';
+            }
+            function applyLayout() {
+              if (!reader) return { columns: 1, gap: 0 };
+              const columns = spreadMode ? 2 : 1;
+              const gap = spreadMode ? ${columnGap} : 0;
+              const width = pageWidth();
+              const available = Math.max(1, width);
+              const colWidth = columns > 1
+                ? Math.max(1, (available - gap) / 2)
+                : available;
+              reader.style.height = pageMode ? pageHeight() + 'px' : 'auto';
+              reader.style.columnGap = gap + 'px';
+              reader.style.columnWidth = colWidth + 'px';
+              reader.style.columnCount = 'auto';
+              reader.style.columnFill = 'auto';
+              columnWidth = colWidth;
+              columnGap = gap;
+              pageStride = Math.max(1, colWidth + gap);
+              return { columns, gap, colWidth };
+            }
+            function setContent() {
+              if (!page) return;
+              if (!rawContent) {
+                page.innerHTML = '';
+                return;
+              }
+              try {
+                const doc = new DOMParser().parseFromString(rawContent, 'text/html');
+                page.innerHTML = doc.body ? doc.body.innerHTML : rawContent;
+              } catch (_) {
+                page.innerHTML = rawContent;
+              }
+            }
+            function computeTotalPages() {
+              if (!pageMode) return 1;
+              if (!reader) return 1;
+              const stride = Math.max(1, pageStride);
+              const scrollWidth = Math.max(1, reader.scrollWidth || 1);
+              return Math.max(1, Math.ceil(scrollWidth / stride));
             }
             function pageCount() {
               if (!pageMode || !reader) return 1;
-              const total = Math.ceil(reader.scrollWidth / columnStride());
-              return Math.max(1, total);
+              return totalPages;
             }
             function clampPage(p) {
               const total = pageCount();
@@ -102,56 +154,23 @@ class HtmlHelper {
             function goToPage(p) {
               if (!pageMode || !reader) return 1;
               currentPage = clampPage(p);
-              const left = (currentPage - 1) * columnStride();
-              window.scrollTo(left, 0);
-              document.documentElement.scrollLeft = left;
-              document.body.scrollLeft = left;
-              updateImagesForPage();
+              const left = (currentPage - 1) * pageStride;
+              if (viewport) {
+                viewport.scrollLeft = left;
+              }
               return currentPage;
             }
             function reflow() {
-              const total = pageCount();
-              if (currentPage > total) currentPage = total;
+              setViewport();
+              const layout = applyLayout();
+              totalPages = computeTotalPages();
+              if (reader) {
+                reader.style.width =
+                  (totalPages * pageStride) + 'px';
+              }
+              if (currentPage > totalPages) currentPage = totalPages;
               goToPage(currentPage);
-              return total;
-            }
-            function optimizeImages() {
-              const imgs = document.images;
-              for (let i = 0; i < imgs.length; i++) {
-                const img = imgs[i];
-                img.loading = 'lazy';
-                img.decoding = 'async';
-                if (!img.dataset.src) {
-                  img.dataset.src = img.getAttribute('src') || '';
-                }
-                if (pageMode) {
-                  img.setAttribute('src', imgPlaceholder);
-                }
-              }
-            }
-            function updateImagesForPage() {
-              if (!pageMode) return;
-              const width = columnStride();
-              const pagesVisible = spreadMode ? 2 : 1;
-              const left = (currentPage - 1) * width;
-              const right = left + (width * pagesVisible);
-              const imgs = document.images;
-              for (let i = 0; i < imgs.length; i++) {
-                const img = imgs[i];
-                const rect = img.getBoundingClientRect();
-                const imgLeft = rect.left + window.scrollX;
-                const imgRight = rect.right + window.scrollX;
-                const visible = imgRight >= left && imgLeft <= right;
-                if (visible) {
-                  if (img.dataset.src && img.getAttribute('src') !== img.dataset.src) {
-                    img.setAttribute('src', img.dataset.src);
-                  }
-                } else {
-                  if (img.getAttribute('src') !== imgPlaceholder) {
-                    img.setAttribute('src', imgPlaceholder);
-                  }
-                }
-              }
+              return totalPages;
             }
             window.readerPaging = {
               getPageCount: pageCount,
@@ -159,16 +178,24 @@ class HtmlHelper {
               nextPage: () => goToPage(currentPage + 1),
               prevPage: () => goToPage(currentPage - 1),
               goToPage: goToPage,
-              reflow: reflow
+              reflow: reflow,
+              getState: () => JSON.stringify({
+                total: totalPages,
+                current: currentPage
+              })
             };
             window.addEventListener('resize', () => {
               if (pageMode) reflow();
             });
+            setContent();
+            setViewport();
             if (pageMode) {
-              setTimeout(reflow, 30);
+              setTimeout(reflow, 60);
+              setTimeout(reflow, 200);
             }
-            optimizeImages();
-            updateImagesForPage();
+            window.addEventListener('load', () => {
+              if (pageMode) setTimeout(reflow, 200);
+            });
           })();
         </script>
       </body>
